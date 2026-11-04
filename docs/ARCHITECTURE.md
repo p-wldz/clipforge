@@ -23,6 +23,12 @@ Dashboard HTTP ───┘          │
 7. `review`: dashboard or CLI approval; edited boundaries validated against original clip.
 8. `project/render`: explicit project creation, H.264/AAC segment re-encoding, concat into MP4.
 
+## Staged AI workflow
+
+When AI is explicitly enabled, Clipforge now preserves a reusable **base understanding** before contextual editing. It is a timestamped, evidence-labelled account of a whole clip and is written to `artifacts/<clip-id>/understanding/base.json`; its SQLite cache key contains the media inputs, provider/model and understanding prompt, but not the creative brief. The existing highlight selection call is the editing stage: its candidates are additionally recorded in context-keyed highlight sets. This preserves the legacy `clip_analyses` and `highlights` interfaces while allowing a different editing context to reuse media analysis and base observations.
+
+Optional domain interpretations are stored separately under `understanding/contexts/`. Project contexts live in `.clipforge/contexts.json` with independent `domain`, `editing`, and `filmDirection` fields. New stage profiles (`understanding`, `contextualUnderstanding`, `editing`, `filmDirection`) are optional; old workspaces continue to inherit `agent`, `clipAnalysis`, and `montage` settings.
+
 ## Why no queue or external DB?
 Single-user local processing. SQLite WAL is sufficient for metadata; artifacts are files. CLI operates one video at a time. Long-term direction: job table and worker process, resumable per-stage job state, parallel limits. Avoid Redis/Postgres until justified.
 

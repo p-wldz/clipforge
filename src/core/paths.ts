@@ -5,6 +5,8 @@ import { defaultPrices, validateCatalog, type PriceCatalog } from './usage.js';
 import { randomUUID, createHash } from 'node:crypto';
 
 export type AgentProvider = 'none' | 'codex' | 'claude' | 'cursor' | 'deepseek';
+export type AiStage = 'understanding'|'contextualUnderstanding'|'editing'|'filmDirection';
+export type AiProfile = { provider: AgentProvider; model?: string };
 export interface Config {
   version: 1;
   toolsScope?: 'project'|'user';
@@ -12,7 +14,9 @@ export interface Config {
   pricing?: PriceCatalog;
   project: { name: string; description: string; focus: string; hasAudio: boolean };
   agent: { provider: AgentProvider; model?: string };
-  aiStages?: { clipAnalysis: { provider: AgentProvider; model?: string }; montage: { provider: AgentProvider; model?: string } };
+  /** Optional so v1 workspaces keep inheriting the legacy agent profile. */
+  aiStages?: Partial<Record<AiStage, AiProfile>> & { clipAnalysis?: AiProfile; montage?: AiProfile };
+  contexts?: { domain: string; editing: string; filmDirection: string };
   analysis: { frameIntervalSeconds: number; maxImagesPerClip?: number; imageMaxWidth?:number; maxFramesPerHighlight: number; maxHighlightsPerClip: number; highlightDurationSeconds: number; minAudioSilenceSeconds: number; minDurationSeconds: number; maxDurationSeconds: number | null; requireAudio: boolean };
   soundClassifier: { enabled: boolean; provider: 'ast'; model: string; command: string; windowSeconds: number; hopSeconds: number; minConfidence: number; maxEvents: number };
   transcription: { enabled: boolean; provider?: 'whisper-cli'|'faster-whisper'; model?:string; device?:'cpu'|'cuda'|'auto'; command: string; args: string[] };
@@ -49,6 +53,7 @@ export async function initWorkspace(root: string, options: { name?:string; descr
     validateAnalysis(config.analysis);
     await writeFile(configPath, JSON.stringify(config,null,2)+'\n');
     await writeFile(path.join(workspaceDir(root),'context.md'), `# ${config.project.name}\n\n## Description\n${config.project.description}\n\n## Highlight priorities\n${config.project.focus}\n\n## Instructions for agents\n- Base descriptions on evidence in screenshots and transcripts.\n- Never invent kills, speech or events.\n- Propose start/end timestamps, preserving important lead-in and reactions.\n- Human approval is required before rendering.\n`);
+    await writeFile(path.join(workspaceDir(root),'contexts.json'),JSON.stringify({domain:'',editing:config.project.focus,filmDirection:config.project.focus},null,2)+'\n');
     await writeFile(path.join(workspaceDir(root),'workflow.json'), JSON.stringify({version:1,steps:['probe','frames','audio-activity','transcribe','classify-sounds','detect-candidates','agent-review','human-review','render'],reviewRequired:true},null,2)+'\n');
   }
   await ensurePrompts(root);
@@ -58,7 +63,7 @@ export async function loadConfig(root: string): Promise<Config> {
   const file = await readFile(path.join(workspaceDir(root),'config.json'),'utf8');
   const input = JSON.parse(file) as Partial<Config>;
   if (input.version !== 1 || !['none','codex','claude','cursor','deepseek'].includes(input.agent?.provider ?? '')) throw new Error('Invalid config: expected version=1 and agent.provider=none|codex|claude|cursor|deepseek');
-  const config = { ...defaultConfig, ...input, pricing: input.pricing ? validateCatalog(input.pricing) : structuredClone(defaultPrices), project: {...defaultConfig.project,...input.project}, analysis: {...defaultConfig.analysis,...input.analysis}, soundClassifier: {...defaultConfig.soundClassifier,...input.soundClassifier}, transcription: {...defaultConfig.transcription,...input.transcription, provider: input.transcription?.provider ?? (input.transcription?.command === 'whisper' ? 'whisper-cli' : 'faster-whisper')}, agent: {...defaultConfig.agent,...input.agent}, aiStages: input.aiStages ? {clipAnalysis: {...defaultConfig.agent,...input.aiStages.clipAnalysis},montage:{...defaultConfig.agent,...input.aiStages.montage}} : undefined };
+  const config = { ...defaultConfig, ...input, pricing: input.pricing ? validateCatalog(input.pricing) : structuredClone(defaultPrices), project: {...defaultConfig.project,...input.project}, analysis: {...defaultConfig.analysis,...input.analysis}, soundClassifier: {...defaultConfig.soundClassifier,...input.soundClassifier}, transcription: {...defaultConfig.transcription,...input.transcription, provider: input.transcription?.provider ?? (input.transcription?.command === 'whisper' ? 'whisper-cli' : 'faster-whisper')}, agent: {...defaultConfig.agent,...input.agent}, contexts: input.contexts?{domain:input.contexts.domain??'',editing:input.contexts.editing??input.project?.focus??'',filmDirection:input.contexts.filmDirection??input.project?.focus??''}:undefined, aiStages: input.aiStages ? {...input.aiStages} : undefined };
   if(!['project','user'].includes(config.toolsScope??'project'))throw new Error('Invalid tools scope');
   validateAnalysis(config.analysis);
   return config;
@@ -81,7 +86,7 @@ export async function saveConfig(root:string,config:Config){
   if(!['project','user'].includes(config.toolsScope??'project'))throw new Error('Invalid tools scope');
   validateAnalysis(config.analysis);
   if(config.pricing)config.pricing=validateCatalog(config.pricing);
-  for(const stage of Object.values(config.aiStages??{})){if(!['none','codex','claude','deepseek'].includes(stage.provider))throw new Error('Unsupported AI stage provider');if(stage.model && (stage.model.length>180||/[\r\n]/.test(stage.model)))throw new Error('Invalid AI model identifier');}
+  for(const stage of Object.values(config.aiStages??{})){if(!stage)continue;if(!['none','codex','claude','deepseek'].includes(stage.provider))throw new Error('Unsupported AI stage provider');if(stage.model && (stage.model.length>180||/[\r\n]/.test(stage.model)))throw new Error('Invalid AI model identifier');}
   if(!config.project.name.trim() || !config.mediaDir.trim() || path.isAbsolute(config.mediaDir) || !inside(root,path.resolve(root,config.mediaDir)) || path.relative(root,path.resolve(root,config.mediaDir)).split(path.sep).includes('.clipforge'))throw new Error('Invalid project name or clips directory');
   if(!Number.isFinite(config.analysis.maxHighlightsPerClip)||config.analysis.maxHighlightsPerClip<1 || !Number.isFinite(config.analysis.highlightDurationSeconds)||config.analysis.highlightDurationSeconds<=0)throw new Error('Invalid highlight settings');
   if(!['ast'].includes(config.soundClassifier.provider) || !Number.isFinite(config.soundClassifier.windowSeconds) || config.soundClassifier.windowSeconds<1 || config.soundClassifier.windowSeconds>20 || !Number.isFinite(config.soundClassifier.hopSeconds) || config.soundClassifier.hopSeconds<=0 || !Number.isFinite(config.soundClassifier.minConfidence) || config.soundClassifier.minConfidence<0 || config.soundClassifier.minConfidence>1 || !Number.isInteger(config.soundClassifier.maxEvents) || config.soundClassifier.maxEvents<1) throw new Error('Invalid sound classifier settings');

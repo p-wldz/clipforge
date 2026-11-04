@@ -7,6 +7,8 @@
 - `clips(id, source_path, duration, width, height, analyzed_at, transcript)`
 - `highlights(id, clip_id, start, end, title, description, score, status, origin, created_at)`
 - `projects(id, name, created_at)` and `project_items(project_id, highlight_id, position)`
+- `stage_artifacts(clip_id, stage, cache_key, ...)` stores immutable, cache-keyed base/contextual understanding payloads. A failed optional stage is recorded rather than silently reused.
+- `highlight_sets(context_key, cache_key)` and `highlight_set_items(...)` retain editing candidates per creative context. They never delete approved or rejected highlight rows.
 
 Highlight `status`: `pending_review | approved | rejected`. `origin`: `heuristic | codex | claude`. Time units are seconds, start inclusive, end exclusive. Scores 0–100; heuristic score 50 represents an unverified candidate.
 

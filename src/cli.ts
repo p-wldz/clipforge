@@ -16,10 +16,10 @@ import { render } from './pipeline/render.js';
 import { ensurePrompts, getPrompt, promptPath, type PromptName } from './agents/prompts.js';
 import { smokeTestAgent } from './agents/smoke.js';
 import { suggestFilm,latestFilmProposal } from './agents/montage.js';
-import { readFile } from 'node:fs/promises';
+import { contexts } from './pipeline/staged-ai.js';
 const usage=`clipforge-local - local-first gameplay highlights\n\nCommands:\n  init [folder] [--interactive]         Initialize workspace (project questions)\n  doctor [--json]                      Check installed tools (no LLM)\n  setup [--interactive] [--transcription] [--sound-classifier] [--device cpu|cuda|auto] [--scope project|user] [--dry-run] [--yes]  Install missing dependencies with consent\n  usage [run-id]                       Reported token usage, billing observations and optional pricing estimates\n  ai models                            Discover provider model catalogs (access test still required)
-  ai set <clip|montage> <codex|claude|deepseek|none> [model-id]  Choose agent and model for a stage
-  ai test <clip|montage>                Make a real model call for a configured stage
+  ai set <understanding|contextual|editing|direction|clip|montage> <codex|claude|deepseek|none> [model-id]  Choose agent and model for a stage
+  ai test <understanding|contextual|editing|direction|clip|montage>  Make a real model call for a configured stage
   agents                               Detect installed agent CLIs
   agent test [codex|claude|deepseek]             Real AI connection test (uses tokens)
   prompts [list|show <name>]            Inspect editable prompts
@@ -57,19 +57,19 @@ async function main(){
     case 'ai': {
       if(args[0]==='models') {console.log(JSON.stringify(await scanAiModels(root),null,2));return;}
       const config=await loadConfig(root);
-      const stage=args[1]==='clip'?'clipAnalysis':args[1]==='montage'?'montage':null;
-      if(!stage)throw new Error('Use: clipforge ai models | ai set <clip|montage> <codex|claude|deepseek|none> [model] | ai test <clip|montage>');
+      const stage=({clip:'clipAnalysis',montage:'montage',understanding:'understanding',contextual:'contextualUnderstanding',editing:'editing',direction:'filmDirection'} as Record<string,string>)[args[1]??''];
+      if(!stage)throw new Error('Use: clipforge ai models | ai set <understanding|contextual|editing|direction> <provider> [model]');
       if(args[0]==='set'){
         const provider=args[2];
         if(!provider||!['none','codex','claude','deepseek'].includes(provider))throw new Error('Agent must be none, codex, claude or deepseek');
-        const current=config.aiStages??{clipAnalysis:{...config.agent},montage:{...config.agent}};
-        current[stage]={provider:provider as 'none'|'codex'|'claude'|'deepseek',...(args[3]?{model:args[3]}:{})};
+        const current:NonNullable<typeof config.aiStages>=config.aiStages??{};
+        current[stage as keyof typeof current]={provider:provider as 'none'|'codex'|'claude'|'deepseek',...(args[3]?{model:args[3]}:{})};
         config.aiStages=current;
         await saveConfig(root,config);
         console.log(JSON.stringify(config.aiStages,null,2));return;
       }
       if(args[0]==='test'){
-        const profile=config.aiStages?.[stage]??config.agent;
+        const profile=config.aiStages?.[stage as keyof NonNullable<typeof config.aiStages>]??config.agent;
         if(profile.provider!=='codex'&&profile.provider!=='claude'&&profile.provider!=='deepseek')throw new Error('Stage requires Codex, Claude or DeepSeek');
         const result=await smokeTestAgent(root,profile.provider,profile.model);
         console.log(JSON.stringify(result,null,2));if(result.status!=='success')process.exitCode=1;return;
@@ -79,21 +79,21 @@ async function main(){
     case 'prompts': {
       await ensurePrompts(root);
       if(args[0]==='show'){
-        const name=args[1] as PromptName;if(!['clip-analysis','highlight-selection','montage','film-direction','agent-test'].includes(name))throw new Error('Unknown prompt name');
+        const name=args[1] as PromptName;if(!['understanding-base','understanding-contextual','editing-boundary-refinement','clip-analysis','highlight-selection','montage','film-direction','film-regeneration','agent-test'].includes(name))throw new Error('Unknown prompt name');
         console.log(await getPrompt(root,name));
-      }else for(const name of ['clip-analysis','highlight-selection','montage','film-direction','agent-test'] as PromptName[])console.log(`${name}: ${promptPath(root,name)}`);
+      }else for(const name of ['understanding-base','understanding-contextual','editing-boundary-refinement','clip-analysis','highlight-selection','montage','film-direction','film-regeneration','agent-test'] as PromptName[])console.log(`${name}: ${promptPath(root,name)}`);
       return;
     }
     case 'suggest': {
       const config=await loadConfig(root);
-      const provider=(args[0]??config.aiStages?.montage.provider??config.agent.provider);
+      const provider=(args[0]??config.aiStages?.montage?.provider??config.aiStages?.filmDirection?.provider??config.agent.provider);
       if(provider!=='codex'&&provider!=='claude'&&provider!=='deepseek')throw new Error('Choose Codex, Claude or DeepSeek');
       const db=new Store(root);
       try {
         const items=db.highlights().filter(h=>h.status!=='rejected');
         const summaries=db.clipAnalyses().filter((r:any)=>r.status==='success');
-        const context=await readFile(path.join(workspaceDir(root),'context.md'),'utf8');
-        console.log(JSON.stringify(await suggestFilm(root,provider,config.aiStages?.montage.model??config.agent.model,context,items,summaries,console.log),null,2));
+        const context=(await contexts(root,config)).filmDirection;
+        console.log(JSON.stringify(await suggestFilm(root,provider,config.aiStages?.montage?.model??config.aiStages?.filmDirection?.model??config.agent.model,context,items,summaries,console.log),null,2));
       }finally{db.close();}
       return;
     }

@@ -12,6 +12,7 @@ import { smokeTestAgent } from './agents/smoke.js';
 import { scanAiModels } from './core/ai-models.js';
 
 import { analyze } from './pipeline/analyze.js';
+import { contexts } from './pipeline/staged-ai.js';
 import { validateCatalog } from './core/usage.js';
 const dashboardRoot = fileURLToPath(new URL('./dashboard/', import.meta.url));
 const contentTypes:Record<string,string>={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.jpg':'image/jpeg','.png':'image/png','.mp4':'video/mp4'};
@@ -55,7 +56,8 @@ export function startServer(root:string,port:number,host='127.0.0.1') {
           if(entry.model && !catalog.providers[entry.provider]?.models.includes(entry.model))throw new Error(`${stageName}: model '${entry.model}' was not returned by the current ${entry.provider} catalog. Scan models again or use provider default.`);
           if(entry.provider!=='none'&&!catalog.providers[entry.provider]?.usable)throw new Error(`${stageName}: provider ${entry.provider} is not available`);
         }
-        config.aiStages=stages;
+        // Preserve independent new-stage profiles when an older dashboard saves its two controls.
+        config.aiStages={...config.aiStages,...stages};
         await saveConfig(root,config);
         return send(res,200,{saved:true,stages:config.aiStages});
       }
@@ -65,7 +67,7 @@ export function startServer(root:string,port:number,host='127.0.0.1') {
         if(db.runs().some((r:any)=>r.status==='running'&&Date.now()-Date.parse(r.started_at)<60*60*1000))return send(res,409,{error:'An analysis run is already active. Check Pipeline progress.'});
         const input=await jsonBody(req);
         const config=await loadConfig(root);
-        const provider=input.provider??config.aiStages?.clipAnalysis.provider??config.agent.provider;
+        const provider=input.provider??config.aiStages?.understanding?.provider??config.aiStages?.clipAnalysis?.provider??config.agent.provider;
         if(!['none','codex','claude','deepseek'].includes(String(provider)))throw new Error('Unsupported analysis provider');
         if(typeof input.force!=='boolean')throw new Error('force must be a boolean');
         const jobId=newId();analysisStarting=true;activeAnalysisJobs.set(jobId,{status:'running'});
@@ -78,15 +80,17 @@ export function startServer(root:string,port:number,host='127.0.0.1') {
       }
       if(parts[0]==='api'&&parts[1]==='analysis'&&parts[2]==='jobs'&&parts[3]&&req.method==='GET')return send(res,200,activeAnalysisJobs.get(parts[3])??{status:'unknown'});
       if(url.pathname==='/api/prompts'&&req.method==='GET') {
-        const names:PromptName[]=['clip-analysis','highlight-selection','montage','film-direction','film-regeneration','agent-test'];
+        const names:PromptName[]=['understanding-base','understanding-contextual','editing-boundary-refinement','clip-analysis','highlight-selection','montage','film-direction','film-regeneration','agent-test'];
         return send(res,200,Object.fromEntries(await Promise.all(names.map(async name=>[name,await getPrompt(root,name)]))));
       }
       if(url.pathname==='/api/prompts'&&req.method==='PUT') {
         const input=await jsonBody(req);
-        if(typeof input.name!=='string'||!['clip-analysis','highlight-selection','montage','film-direction','film-regeneration','agent-test'].includes(input.name)||typeof input.content!=='string')throw new Error('Invalid prompt name/content');
+        if(typeof input.name!=='string'||!['understanding-base','understanding-contextual','editing-boundary-refinement','clip-analysis','highlight-selection','montage','film-direction','film-regeneration','agent-test'].includes(input.name)||typeof input.content!=='string')throw new Error('Invalid prompt name/content');
         await setPrompt(root,input.name as PromptName,input.content);
         return send(res,200,{saved:true});
       }
+      if(url.pathname==='/api/contexts'&&req.method==='GET'){const config=await loadConfig(root);const raw=await readFile(path.join(workspaceDir(root),'contexts.json'),'utf8').then(JSON.parse).catch(()=>({}));return send(res,200,{domain:raw.domain??config.contexts?.domain??'',editing:raw.editing??config.contexts?.editing??config.project.focus,filmDirection:raw.filmDirection??config.contexts?.filmDirection??config.project.focus});}
+      if(url.pathname==='/api/contexts'&&req.method==='PUT'){const input=await jsonBody(req);const value=['domain','editing','filmDirection'].reduce((out,key)=>{const v=input[key];if(typeof v!=='string'||v.length>30000)throw new Error(`Invalid ${key} context`);out[key]=v;return out;},{} as Record<string,string>);await writeFile(path.join(workspaceDir(root),'contexts.json'),JSON.stringify(value,null,2)+'\n');return send(res,200,{saved:true,...value});}
       if(url.pathname==='/api/montage/suggestion'&&req.method==='GET')return send(res,200,await latestFilmProposal(root));
       if(url.pathname==='/api/montage/suggestion'&&req.method==='PATCH'){
         if(proposalJob?.status==='running')return send(res,409,{error:'Suggestion generation is running'});
@@ -99,14 +103,14 @@ export function startServer(root:string,port:number,host='127.0.0.1') {
         const input=await jsonBody(req);
         if(input.guidance!==undefined&&(typeof input.guidance!=='string'||input.guidance.length>3000))throw new Error('Invalid regeneration guidance');
         const config=await loadConfig(root);
-        const provider=config.aiStages?.montage.provider??config.agent.provider;
+        const provider=config.aiStages?.filmDirection?.provider??config.aiStages?.montage?.provider??config.agent.provider;
         if(provider!=='codex'&&provider!=='claude'&&provider!=='deepseek')throw new Error('Configure a Codex, Claude or DeepSeek movie suggestion provider first');
         const items=db.highlights().filter(h=>h.status!=='rejected');
         if(!items.length)throw new Error('No highlight candidates. Analyze clips first.');
         const summaries=db.clipAnalyses().filter((r:any)=>r.status==='success');
-        const context=await readFile(path.join(workspaceDir(root),'context.md'),'utf8');
+        const context=(await contexts(root,config)).filmDirection;
         proposalJob={status:'running'};
-        void suggestFilm(root,provider,config.aiStages?.montage.model??config.agent.model,context,items,summaries,undefined,undefined,typeof input.guidance==='string'?input.guidance:'').then(
+        void suggestFilm(root,provider,config.aiStages?.filmDirection?.model??config.aiStages?.montage?.model??config.agent.model,context,items,summaries,undefined,undefined,typeof input.guidance==='string'?input.guidance:'').then(
           ()=>{proposalJob={status:'completed'}},err=>{proposalJob={status:'failed',error:(err as Error).message}}
         );
         return send(res,202,{status:'running'});
@@ -214,6 +218,7 @@ export function startServer(root:string,port:number,host='127.0.0.1') {
       if(url.pathname==='/api/analysis/runs'&&req.method==='GET')return send(res,200,db.runs());
       if(parts[0]==='api'&&parts[1]==='analysis'&&parts[2]==='events'&&parts[3]&&req.method==='GET')return send(res,200,db.events(parts[3],Number(url.searchParams.get('after')??0)));
       if(url.pathname==='/api/analysis/clips'&&req.method==='GET')return send(res,200,db.clipAnalyses());
+      if(url.pathname==='/api/analysis/highlight-sets'&&req.method==='GET')return send(res,200,db.highlightSets());
       if(parts[0]==='api'&&parts[1]==='analysis'&&parts[2]==='clip'&&parts[3]&&req.method==='GET'){
         const clip=db.clip(parts[3]);if(!clip)return send(res,404,{error:'Clip not found'});
         const info=db.clipAnalysis(parts[3]);
@@ -222,7 +227,7 @@ export function startServer(root:string,port:number,host='127.0.0.1') {
         const response=await readFile(path.join(folder,'ai','response.txt'),'utf8').catch(()=>null);
         const stdout=await readFile(path.join(folder,'ai','stdout.log'),'utf8').catch(()=>null);
         const stderr=await readFile(path.join(folder,'ai','stderr.log'),'utf8').catch(()=>null);
-        return send(res,200,{info,trace,response,stdout,stderr});
+        return send(res,200,{info,stages:db.stageArtifacts(parts[3]),trace,response,stdout,stderr});
       }
       if(url.pathname==='/api/clips'&&req.method==='GET')return send(res,200,db.clips());
       if(url.pathname==='/api/transcripts/search'&&req.method==='GET')return send(res,200,db.searchTranscripts(url.searchParams.get('q')??''));
