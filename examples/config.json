@@ -1,0 +1,7 @@
+{
+  "version": 1,
+  "mediaDir": "clips",
+  "agent": { "provider": "codex" },
+  "analysis": { "frameIntervalSeconds": 3, "maxFramesPerHighlight": 4, "maxHighlightsPerClip": 4, "highlightDurationSeconds": 12, "minAudioSilenceSeconds": 1.3 },
+  "transcription": { "enabled": false, "command": "whisper", "args": ["{input}", "--model", "base", "--output_format", "json", "--output_dir", "{outputDir}"] }
+}
