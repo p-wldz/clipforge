@@ -78,11 +78,12 @@ clipforge ai test understanding
 ## What Clipforge does
 
 1. **Media analysis** probes the video, samples frames, records audio activity, and optionally runs local transcription or sound classification.
-2. **Base understanding** is an optional AI pass that describes the whole clip with timestamped, evidence-labelled observations. It is independent of creative preferences and cached for reuse.
+2. **Deep Action Analysis** is an optional AI pass that maps complete actions from quiet setup through outcome and reaction, with timestamped evidence and uncertainty. It is independent of creative preferences and cached for reuse.
 3. **Contextual understanding** is an optional domain interpretation layer. It can explain game terminology without changing the base observations.
-4. **Editing** generates highlight candidates for an editing context. It should preserve setup, action, outcome, and reactions rather than optimize only for short cuts.
-5. **Film direction** selects and orders existing highlights for a separate film-direction context. It creates an editable proposal, never an automatic render.
-6. **Human review and rendering** happen in the dashboard or CLI. Source recordings are never modified.
+4. **Contextual Editing** decides which complete actions fit the editing context, including exact boundaries, setup/reaction needs, and optional acceleration. It can select none.
+5. **Critical Review** is optional and limited to one pass (`analysis.criticalReviewPasses: 1`); it stores original and corrected proposals and flags uncertain ranges for visual reanalysis.
+6. **Film direction** selects and orders existing highlights for a separate film-direction context. It creates an editable proposal, never an automatic render.
+7. **Human review and rendering** happen in the dashboard or CLI. Source recordings are never modified.
 
 Projects have three independent contexts in `.clipforge/contexts.json`:
 
@@ -106,7 +107,7 @@ Every command accepts `--root <workspace-path>` before the command. Without it, 
 | `agents` | Detect installed provider CLIs. | — |
 | `agent [provider]` | Show or set the legacy default provider. | `none`, `codex`, `claude`, `cursor`, or `deepseek`; `agent test [provider]` makes a real call |
 | `ai models` | Discover provider model IDs. Discovery does not verify access. | — |
-| `ai set <stage> <provider> [model]` | Set a provider/model for a stage. | Stages: `understanding`, `contextual`, `editing`, `direction`; compatibility aliases: `clip`, `montage` |
+| `ai set <stage> <provider> [model]` | Set a provider/model for a stage. | Stages: `understanding`, `contextual`, `editing`, `critical`, `direction`; compatibility aliases: `clip`, `montage` |
 | `ai test <stage>` | Make a real provider connection test for a configured stage. | Same stages as `ai set` |
 | `prompts` | List editable project prompt files. | `show <name>` prints one prompt |
 | `suggest [provider]` | Generate an editable film proposal from stored highlights. | Provider: `codex`, `claude`, or `deepseek` |

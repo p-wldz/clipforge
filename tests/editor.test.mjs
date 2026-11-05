@@ -3,9 +3,128 @@ import assert from 'node:assert/strict';
 import { mkdtemp } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import {initWorkspace} from '../dist/core/paths.js';
-import {Store} from '../dist/core/db.js';
-import {startServer} from '../dist/server.js';
-async function fixture(){const root=await mkdtemp(path.join(os.tmpdir(),'clipforge-editor-'));await initWorkspace(root);const db=new Store(root);const now=new Date().toISOString();db.upsertClip({id:'c1',source_path:path.join(root,'clips','sample.mp4'),duration:40,width:1280,height:720,analyzed_at:now,transcript:null});db.upsertHighlight({id:'h1',clip_id:'c1',start:10,end:20,title:'BANG',description:'Loud explosion',score:84,status:'pending_review',origin:'codex',created_at:now});db.upsertHighlight({id:'h2',clip_id:'c1',start:21,end:30,title:'Funny',description:'Voice chat',score:77,status:'rejected',origin:'claude',created_at:now});return {root,db};}
-test('editor project stores independent trims, ordering and review state',async()=>{const {db}=await fixture();try{db.createEditorProject('p','My film',['h1','h2'],'Story','ai-suggestion');const changed=db.updateEditorProject('p',{name:'New title',description:'Fine edit',items:[{highlightId:'h2',start:22,end:29},{highlightId:'h1',start:8,end:24}]});assert.deepEqual(changed.items.map(x=>x.id),['h2','h1']);assert.equal(changed.items[0].start,22);assert.equal(changed.items[1].end,24);assert.equal(db.highlight('h1').start,10);assert.equal(db.highlight('h2').status,'rejected');assert.equal(changed.description,'Fine edit');assert.throws(()=>db.updateEditorProject('p',{name:'X',description:'',items:[{highlightId:'h1',start:30,end:41}]}),/Invalid cut/);}finally{db.close()}});
-test('editor endpoints create, load and save montage drafts',async()=>{const {root,db}=await fixture();db.close();const server=startServer(root,0);await new Promise(resolve=>server.once('listening',resolve));const base=`http://127.0.0.1:${server.address().port}`;const req=async(url,method='GET',body)=>{const r=await fetch(base+url,{method,headers:{'content-type':'application/json'},body:body?JSON.stringify(body):undefined});return {status:r.status,data:await r.json()}};try{const created=await req('/api/editor/projects','POST',{name:'New movie',highlightIds:['h1','h2'],origin:'manual'});assert.equal(created.status,201);const id=created.data.id;const changed=await req(`/api/editor/projects/${id}`,'PUT',{name:'New movie 2',description:'In edited order',items:[{highlightId:'h2',start:23,end:27},{highlightId:'h1',start:5,end:18}]});assert.equal(changed.status,200);assert.deepEqual(changed.data.items.map(x=>x.id),['h2','h1']);assert.equal(changed.data.items[0].start,23);const loaded=await req(`/api/editor/projects/${id}`);assert.equal(loaded.data.description,'In edited order');const invalid=await req(`/api/editor/projects/${id}`,'PUT',{name:'bad',description:'',items:[{highlightId:'h2',start:-1,end:20}]});assert.equal(invalid.status,400);}finally{await new Promise(resolve=>server.close(resolve))}});
+import { initWorkspace } from '../dist/core/paths.js';
+import { Store } from '../dist/core/db.js';
+import { startServer } from '../dist/server.js';
+async function fixture() {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'clipforge-editor-'));
+  await initWorkspace(root);
+  const db = new Store(root);
+  const now = new Date().toISOString();
+  db.upsertClip({
+    id: 'c1',
+    source_path: path.join(root, 'clips', 'sample.mp4'),
+    duration: 40,
+    width: 1280,
+    height: 720,
+    analyzed_at: now,
+    transcript: null,
+  });
+  db.upsertHighlight({
+    id: 'h1',
+    clip_id: 'c1',
+    start: 10,
+    end: 20,
+    title: 'BANG',
+    description: 'Loud explosion',
+    score: 84,
+    status: 'pending_review',
+    origin: 'codex',
+    created_at: now,
+  });
+  db.upsertHighlight({
+    id: 'h2',
+    clip_id: 'c1',
+    start: 21,
+    end: 30,
+    title: 'Funny',
+    description: 'Voice chat',
+    score: 77,
+    status: 'rejected',
+    origin: 'claude',
+    created_at: now,
+  });
+  return { root, db };
+}
+test('editor project stores independent trims, ordering and review state', async () => {
+  const { db } = await fixture();
+  try {
+    db.createEditorProject('p', 'My film', ['h1', 'h2'], 'Story', 'ai-suggestion');
+    const changed = db.updateEditorProject('p', {
+      name: 'New title',
+      description: 'Fine edit',
+      items: [
+        { highlightId: 'h2', start: 22, end: 29 },
+        { highlightId: 'h1', start: 8, end: 24 },
+      ],
+    });
+    assert.deepEqual(
+      changed.items.map((x) => x.id),
+      ['h2', 'h1'],
+    );
+    assert.equal(changed.items[0].start, 22);
+    assert.equal(changed.items[1].end, 24);
+    assert.equal(db.highlight('h1').start, 10);
+    assert.equal(db.highlight('h2').status, 'rejected');
+    assert.equal(changed.description, 'Fine edit');
+    assert.throws(
+      () =>
+        db.updateEditorProject('p', {
+          name: 'X',
+          description: '',
+          items: [{ highlightId: 'h1', start: 30, end: 41 }],
+        }),
+      /Invalid cut/,
+    );
+  } finally {
+    db.close();
+  }
+});
+test('editor endpoints create, load and save montage drafts', async () => {
+  const { root, db } = await fixture();
+  db.close();
+  const server = startServer(root, 0);
+  await new Promise((resolve) => server.once('listening', resolve));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  const req = async (url, method = 'GET', body) => {
+    const r = await fetch(base + url, {
+      method,
+      headers: { 'content-type': 'application/json' },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    return { status: r.status, data: await r.json() };
+  };
+  try {
+    const created = await req('/api/editor/projects', 'POST', {
+      name: 'New movie',
+      highlightIds: ['h1', 'h2'],
+      origin: 'manual',
+    });
+    assert.equal(created.status, 201);
+    const id = created.data.id;
+    const changed = await req(`/api/editor/projects/${id}`, 'PUT', {
+      name: 'New movie 2',
+      description: 'In edited order',
+      items: [
+        { highlightId: 'h2', start: 23, end: 27 },
+        { highlightId: 'h1', start: 5, end: 18 },
+      ],
+    });
+    assert.equal(changed.status, 200);
+    assert.deepEqual(
+      changed.data.items.map((x) => x.id),
+      ['h2', 'h1'],
+    );
+    assert.equal(changed.data.items[0].start, 23);
+    const loaded = await req(`/api/editor/projects/${id}`);
+    assert.equal(loaded.data.description, 'In edited order');
+    const invalid = await req(`/api/editor/projects/${id}`, 'PUT', {
+      name: 'bad',
+      description: '',
+      items: [{ highlightId: 'h2', start: -1, end: 20 }],
+    });
+    assert.equal(invalid.status, 400);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});

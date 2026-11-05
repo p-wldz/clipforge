@@ -20,6 +20,8 @@
     "dev": "tsx src/cli.ts",
     "build": "tsc -p tsconfig.json && node scripts/copy-dashboard.mjs",
     "start": "node dist/cli.js",
+    "format": "prettier --write \"src/**/*.{ts,js}\" \"tests/**/*.mjs\"",
+    "format:check": "prettier --check \"src/**/*.{ts,js}\" \"tests/**/*.mjs\"",
     "typecheck": "tsc --noEmit",
     "test": "node --test tests/*.test.mjs"
   },
@@ -28,6 +30,7 @@
   },
   "devDependencies": {
     "@types/node": "^22.15.0",
+    "prettier": "3.5.3",
     "tsx": "^4.20.0",
     "typescript": "^5.8.3"
   },
