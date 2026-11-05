@@ -127,8 +127,13 @@ function mountTranscriptSearch() {
           )
           .join('')
       : '<div class="empty">No transcript matches.</div>';
-    $$('[data-transcript-clip]').forEach((button) =>
-      (button.onclick = () => openTranscriptMoment(button.dataset.transcriptClip, Number(button.dataset.transcriptStart))),
+    $$('[data-transcript-clip]').forEach(
+      (button) =>
+        (button.onclick = () =>
+          openTranscriptMoment(
+            button.dataset.transcriptClip,
+            Number(button.dataset.transcriptStart),
+          )),
     );
   };
   $('#transcript-search').onclick = () => search().catch((e) => notify(e.message));
@@ -193,6 +198,10 @@ async function showHighlight(id) {
     a = analyses.find((x) => x.clip_id === h.clip_id);
   $('#review').innerHTML =
     `<video id="review-player" src="/media/${encodeURIComponent(h.clip_id)}" controls preload="metadata"></video><h2>${safe(h.title)}</h2><p>${safe(h.description)}</p><div class="range-fields"><label>Start (seconds)<input id="review-start" type="number" step="0.1" min="0" value="${h.start}"></label><label>End (seconds)<input id="review-end" type="number" step="0.1" min="0" max="${clipOf(h)?.duration || 1000}" value="${h.end}"></label></div><div class="review-buttons"><button id="review-save" class="button-secondary">Save cut</button><button id="review-approve">Approve</button><button id="review-reject">Reject</button><button id="review-to-film" class="primary">Add to film →</button></div><div class="clip-meta"><span class="eyebrow">WHOLE CLIP AI ANALYSIS</span><h3>${safe(a?.title || 'Not yet analyzed')}</h3><p>${safe(a?.summary || a?.error || 'No summary available')}</p><div id="clip-editorial"></div><details><summary>AI evidence, story and reasoning</summary><div id="clip-story"></div></details><details><summary>LLM request and raw response (technical)</summary><pre id="clip-raw" class="log">Loading...</pre></details></div>`;
+  $('#clip-editorial').insertAdjacentHTML(
+    'afterend',
+    '<details class="clip-meta"><summary>Conversation understanding</summary><div id="clip-conversations" class="cards-list">Loading…</div></details>',
+  );
   const update = async (status) => {
     try {
       const h2 = await send(`/api/highlights/${encodeURIComponent(h.id)}`, 'PATCH', {
@@ -216,19 +225,26 @@ async function showHighlight(id) {
   };
   $('#review').insertAdjacentHTML(
     'beforeend',
-    `<details class="clip-meta"><summary>Your feedback</summary><div class="range-fields"><label>Rating<select id="feedback-rating"><option value="">No rating</option>${[1, 2, 3, 4, 5].map((n) => `<option value="${n}">${n} star${n === 1 ? '' : 's'}</option>`).join('')}</select></label><label>Category<select id="feedback-category"><option value="">Choose one</option>${['too_short','too_long','starts_too_late','ends_too_early','missed_important_action','missing_context','missing_reaction','wrong_interpretation','not_interesting','repetitive','bad_audio','funny_moment','great_action','excellent_storytelling'].map((x) => `<option value="${x}">${safe(x.replaceAll('_', ' '))}</option>`).join('')}</select></label></div><label>Notes<textarea id="feedback-notes" rows="2" placeholder="Optional feedback for future review"></textarea></label><label class="checkbox-row"><input id="feedback-favorite" type="checkbox"> Favorite</label><button id="feedback-save" class="button-secondary">Save feedback</button><div id="feedback-history" class="muted little"></div></details><details class="clip-meta"><summary>Mark a missed moment</summary><p class="muted little">Uses the current cut range; adjust start/end above first.</p><label>Description<textarea id="missed-description" rows="2" placeholder="What did Clipforge miss?"></textarea></label><button id="missed-save" class="button-secondary">Save missed moment</button></details>`,
+    `<details class="clip-meta"><summary>Your feedback</summary><div class="range-fields"><label>Rating<select id="feedback-rating"><option value="">No rating</option>${[1, 2, 3, 4, 5].map((n) => `<option value="${n}">${n} star${n === 1 ? '' : 's'}</option>`).join('')}</select></label><label>Category<select id="feedback-category"><option value="">Choose one</option>${['too_short', 'too_long', 'starts_too_late', 'ends_too_early', 'missed_important_action', 'missing_context', 'missing_reaction', 'wrong_interpretation', 'not_interesting', 'repetitive', 'bad_audio', 'funny_moment', 'great_action', 'excellent_storytelling'].map((x) => `<option value="${x}">${safe(x.replaceAll('_', ' '))}</option>`).join('')}</select></label></div><label>Notes<textarea id="feedback-notes" rows="2" placeholder="Optional feedback for future review"></textarea></label><label class="checkbox-row"><input id="feedback-favorite" type="checkbox"> Favorite</label><button id="feedback-save" class="button-secondary">Save feedback</button><div id="feedback-history" class="muted little"></div></details><details class="clip-meta"><summary>Mark a missed moment</summary><p class="muted little">Uses the current cut range; adjust start/end above first.</p><label>Description<textarea id="missed-description" rows="2" placeholder="What did Clipforge miss?"></textarea></label><button id="missed-save" class="button-secondary">Save missed moment</button></details>`,
   );
   const renderFeedback = async () => {
     const rows = await api(`/api/highlights/${encodeURIComponent(h.id)}/feedback`);
     $('#feedback-history').textContent = rows.length
-      ? rows.map((r) => `${r.rating ? `${r.rating}/5` : ''}${r.category ? ` · ${r.category.replaceAll('_', ' ')}` : ''}${r.favorite ? ' · favorite' : ''}`).join('\n')
+      ? rows
+          .map(
+            (r) =>
+              `${r.rating ? `${r.rating}/5` : ''}${r.category ? ` · ${r.category.replaceAll('_', ' ')}` : ''}${r.favorite ? ' · favorite' : ''}`,
+          )
+          .join('\n')
       : 'No feedback yet.';
   };
   $('#feedback-save').onclick = async () => {
     try {
       await clickTask($('#feedback-save'), 'Saving...', async () => {
         await send(`/api/highlights/${encodeURIComponent(h.id)}/feedback`, 'POST', {
-          ...(Number($('#feedback-rating').value) ? { rating: Number($('#feedback-rating').value) } : {}),
+          ...(Number($('#feedback-rating').value)
+            ? { rating: Number($('#feedback-rating').value) }
+            : {}),
           ...($('#feedback-category').value ? { category: $('#feedback-category').value } : {}),
           notes: $('#feedback-notes').value,
           favorite: $('#feedback-favorite').checked,
@@ -257,6 +273,7 @@ async function showHighlight(id) {
   v.addEventListener('loadedmetadata', () => {
     v.currentTime = h.start;
   });
+  const conversationBox = $('#clip-conversations');
   const editorialBox = $('#clip-editorial');
   if (editorialBox) {
     try {
@@ -291,6 +308,31 @@ async function showHighlight(id) {
     .then((r) => {
       const out = $('#clip-raw');
       if (out) out.textContent = JSON.stringify(r, null, 2);
+      const stage = r.stages?.find(
+        (s) => s.stage === 'conversation-understanding' && s.status === 'success',
+      );
+      if (conversationBox) {
+        try {
+          const conversations = JSON.parse(stage?.payload_json || '{}').conversations || [];
+          conversationBox.innerHTML = conversations.length
+            ? conversations
+                .map(
+                  (c) =>
+                    `<button class="button-secondary" data-conversation-seek="${c.start}">${seconds(c.start)}–${seconds(c.end)}: ${safe(c.summary)}</button>`,
+                )
+                .join('')
+            : '<p class="muted little">No conversation artifact for this clip.</p>';
+          conversationBox.querySelectorAll('[data-conversation-seek]').forEach(
+            (button) =>
+              (button.onclick = () => {
+                v.currentTime = Number(button.dataset.conversationSeek);
+                v.play();
+              }),
+          );
+        } catch {
+          conversationBox.textContent = 'Conversation artifact could not be read.';
+        }
+      }
     })
     .catch((e) => {
       const out = $('#clip-raw');

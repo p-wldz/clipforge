@@ -12,6 +12,7 @@ import { selectFrames } from './frame-selection.js';
 import { suggestFilm } from '../agents/montage.js';
 import {
   baseUnderstanding,
+  conversationUnderstanding,
   profileFor,
   contexts,
   persistEditingSet,
@@ -220,7 +221,7 @@ export async function analyze(
         if (provider !== 'none') {
           // This objective artifact is intentionally produced before contextual editing.
           // Its cache key excludes the project creative brief, so it survives a new film idea.
-          const agentPayload = {
+          const agentPayload: Record<string, unknown> = {
             project: {
               name: config.project.name,
               description: config.project.description,
@@ -239,6 +240,66 @@ export async function analyze(
             max,
             [...classified, ...audioSignals.events, ...segments],
           );
+          let conversation;
+          if (segments.length) {
+            event(
+              'conversation-understanding',
+              `${name}: grouping transcript into conversations`,
+              id,
+              'info',
+              name,
+            );
+            try {
+              const result = await conversationUnderstanding(
+                root,
+                db,
+                {
+                  clipId: id,
+                  duration: meta.duration,
+                  transcript: segments.map((segment, index) => ({
+                    ...segment,
+                    id: `utt-${index + 1}`,
+                  })),
+                  events: [
+                    ...classified.map((event, index) => ({
+                      id: `sound-${index + 1}`,
+                      start: event.start,
+                      end: event.end,
+                      kind: 'sound',
+                      detail: event.label,
+                    })),
+                    ...audioSignals.events.map((event, index) => ({
+                      id: `audio-${index + 1}`,
+                      start: event.start,
+                      end: event.end,
+                      kind: 'audio-signal',
+                      detail: event.description,
+                    })),
+                  ],
+                  config,
+                },
+                (message) =>
+                  event('conversation-understanding', `${name}: ${message}`, id, 'info', name),
+              );
+              conversation = result.conversation;
+              agentPayload.conversationUnderstanding = conversation;
+              event(
+                'conversation-understanding',
+                `${name}: ${result.cached ? 'cache hit' : `saved ${conversation.conversations.length} conversations`}`,
+                id,
+                'info',
+                name,
+              );
+            } catch (e) {
+              event(
+                'conversation-understanding',
+                `${name}: FAILED: ${(e as Error).message}; continuing with other evidence`,
+                id,
+                'warn',
+                name,
+              );
+            }
+          }
           event('understanding', `${name}: building reusable base understanding`, id, 'info', name);
           let deepAction;
           try {
@@ -250,6 +311,7 @@ export async function analyze(
                 duration: meta.duration,
                 media: agentPayload,
                 images: selection,
+                conversation,
                 config,
                 runId,
               },
@@ -351,7 +413,7 @@ export async function analyze(
                   start: d.start,
                   end: d.end,
                   title: d.title,
-                  description: `${d.description}\nReason: ${d.reason}\nAction: ${d.actionId}${d.accelerate.length ? `\nAcceleration suggested: ${JSON.stringify(d.accelerate)}` : ''}`,
+                  description: `${d.description}\nReason: ${d.reason}\nAction: ${d.actionId}${d.conversationId ? `\nConversation: ${d.conversationId}\nNarrative phases: ${d.narrativePhaseCoverage.join(', ') || 'unspecified'}\nMissing-context risks: ${d.missingContextRisks.join('; ') || 'none recorded'}` : ''}${d.accelerate.length ? `\nAcceleration suggested: ${JSON.stringify(d.accelerate)}` : ''}`,
                   score: Math.round(d.confidence * 100),
                   status: 'pending_review',
                   origin: provider,

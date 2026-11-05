@@ -85,6 +85,12 @@ Typecheck, tests, build; manual 5-second synthetic video test; docs updated. Sto
 - The final film proposal is a draft. Never auto-approve highlight candidates or render without explicit action.
 - Montage sequence IDs must reference actual stored highlight IDs. Persist prompt, result and errors for troubleshooting.
 
+## Conversation understanding
+
+- Conversation Understanding is an optional, objective AI stage over existing timestamped transcript and local media evidence. It must never rewrite the source transcript, invent speakers, or infer causal links from timestamp proximity alone.
+- Store its validated artifact at `understanding/conversations.json`; relationships may reference only supplied stable utterance or event IDs and must include evidence, confidence, reason, and uncertainty.
+- Deep Action and contextual editing consume this artifact to preserve dialogue setup, answers, payoff, and reactions. Creative preferences belong only to editing, not conversation interpretation.
+
 
 ## Dashboard and AI profile invariants (v0.10)
 

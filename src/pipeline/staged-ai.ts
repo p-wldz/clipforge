@@ -15,6 +15,50 @@ import { getPrompt } from '../agents/prompts.js';
 import { runAgentText } from '../agents/agent.js';
 
 export type ActionPhase = { start: number; end: number; description: string };
+export type ConversationPhase = {
+  type: 'setup' | 'development' | 'payoff' | 'reaction' | 'resolution';
+  start: number;
+  end: number;
+};
+export type ConversationRelationship = {
+  sourceId: string;
+  targetId: string;
+  type:
+    | 'responds_to'
+    | 'refers_to'
+    | 'anticipates'
+    | 'explains'
+    | 'contradicts'
+    | 'reacts_to'
+    | 'follows_up'
+    | 'resolves'
+    | 'possibly_related';
+  evidenceIds: string[];
+  confidence: number;
+  reason: string;
+};
+export type Conversation = {
+  id: string;
+  start: number;
+  end: number;
+  summary: string;
+  topic: string;
+  type: string;
+  narrativePhases: ConversationPhase[];
+  dominantModality: 'dialogue' | 'mixed';
+  visualActivity: 'low' | 'medium' | 'high' | 'unknown';
+  keyUtteranceIds: string[];
+  relatedEventIds: string[];
+  relationships: ConversationRelationship[];
+  interpretation: {
+    humor: 'low' | 'medium' | 'high' | 'uncertain';
+    narrativeValue: 'low' | 'medium' | 'high' | 'uncertain';
+    actionRelevance: 'low' | 'medium' | 'high' | 'uncertain';
+  };
+  confidence: number;
+  uncertainties: string[];
+};
+export type ConversationArtifact = { clipId: string; conversations: Conversation[] };
 export type DeepAction = {
   id: string;
   start: number;
@@ -36,6 +80,7 @@ export type Understanding = {
   summary: string;
   actions: DeepAction[];
   relationships: string[];
+  conversation?: ConversationArtifact;
 };
 export type EditingDecision = {
   actionId: string;
@@ -48,6 +93,9 @@ export type EditingDecision = {
   accelerate: Array<{ start: number; end: number; speed: number }>;
   overlaps: string[];
   confidence: number;
+  conversationId?: string;
+  narrativePhaseCoverage: string[];
+  missingContextRisks: string[];
 };
 const hash = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 export const profileFor = (
@@ -86,6 +134,226 @@ function json(text: string) {
     last = text.lastIndexOf('}');
   if (first < 0 || last <= first) throw new Error('Response contains no JSON object');
   return JSON.parse(text.slice(first, last + 1)) as Record<string, unknown>;
+}
+const bounded = (value: unknown, duration: number) =>
+  typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= duration + 0.1;
+const id = (value: unknown) =>
+  typeof value === 'string' && /^[a-zA-Z0-9_-]{1,80}$/.test(value) ? value : undefined;
+const level = (value: unknown): 'low' | 'medium' | 'high' | 'uncertain' =>
+  value === 'low' || value === 'medium' || value === 'high' ? value : 'uncertain';
+export function parseConversationUnderstanding(
+  text: string,
+  duration: number,
+  clipId: string,
+  utteranceIds: string[],
+  eventIds: string[],
+): ConversationArtifact {
+  const raw = json(text);
+  if (!Array.isArray(raw.conversations))
+    throw new Error('Conversation Understanding requires conversations');
+  const sources = new Set([...utteranceIds, ...eventIds]);
+  const conversations = raw.conversations.flatMap((value, index): Conversation[] => {
+    if (!value || typeof value !== 'object') return [];
+    const v = value as Record<string, unknown>;
+    const start = v.start,
+      end = v.end,
+      conversationId = id(v.conversationId) ?? `conversation-${index + 1}`;
+    if (
+      !bounded(start, duration) ||
+      !bounded(end, duration) ||
+      (end as number) <= (start as number) ||
+      typeof v.summary !== 'string'
+    )
+      return [];
+    const utterances = Array.isArray(v.keyUtteranceIds)
+      ? v.keyUtteranceIds
+          .filter((x): x is string => typeof x === 'string' && utteranceIds.includes(x))
+          .slice(0, 100)
+      : [];
+    if (!utterances.length) return [];
+    const relationships = Array.isArray(v.relationships)
+      ? v.relationships.flatMap((item): ConversationRelationship[] => {
+          if (!item || typeof item !== 'object') return [];
+          const r = item as Record<string, unknown>,
+            sourceId = id(r.sourceId),
+            targetId = id(r.targetId);
+          const types = [
+            'responds_to',
+            'refers_to',
+            'anticipates',
+            'explains',
+            'contradicts',
+            'reacts_to',
+            'follows_up',
+            'resolves',
+            'possibly_related',
+          ];
+          if (
+            !sourceId ||
+            !targetId ||
+            sourceId === targetId ||
+            !sources.has(sourceId) ||
+            !sources.has(targetId) ||
+            !types.includes(r.type as string) ||
+            typeof r.reason !== 'string'
+          )
+            return [];
+          return [
+            {
+              sourceId,
+              targetId,
+              type: r.type as ConversationRelationship['type'],
+              evidenceIds: Array.isArray(r.evidenceIds)
+                ? r.evidenceIds
+                    .filter((x): x is string => typeof x === 'string' && sources.has(x))
+                    .slice(0, 20)
+                : [],
+              confidence:
+                typeof r.confidence === 'number' ? Math.max(0, Math.min(1, r.confidence)) : 0,
+              reason: r.reason.slice(0, 800),
+            },
+          ];
+        })
+      : [];
+    const phases = Array.isArray(v.narrativePhases)
+      ? v.narrativePhases.flatMap((item): ConversationPhase[] => {
+          if (!item || typeof item !== 'object') return [];
+          const p = item as Record<string, unknown>;
+          return ['setup', 'development', 'payoff', 'reaction', 'resolution'].includes(
+            p.type as string,
+          ) &&
+            bounded(p.start, duration) &&
+            bounded(p.end, duration) &&
+            (p.end as number) > (p.start as number)
+            ? [
+                {
+                  type: p.type as ConversationPhase['type'],
+                  start: p.start as number,
+                  end: Math.min(p.end as number, duration),
+                },
+              ]
+            : [];
+        })
+      : [];
+    const interpretation =
+      v.interpretation && typeof v.interpretation === 'object'
+        ? (v.interpretation as Record<string, unknown>)
+        : {};
+    return [
+      {
+        id: conversationId,
+        start: start as number,
+        end: Math.min(end as number, duration),
+        summary: v.summary.slice(0, 2000),
+        topic: typeof v.topic === 'string' ? v.topic.slice(0, 300) : '',
+        type: typeof v.type === 'string' ? v.type.slice(0, 80) : 'interaction',
+        narrativePhases: phases,
+        dominantModality: v.dominantModality === 'mixed' ? 'mixed' : 'dialogue',
+        visualActivity: ['low', 'medium', 'high'].includes(v.visualActivity as string)
+          ? (v.visualActivity as Conversation['visualActivity'])
+          : 'unknown',
+        keyUtteranceIds: utterances,
+        relatedEventIds: Array.isArray(v.relatedEventIds)
+          ? v.relatedEventIds
+              .filter((x): x is string => typeof x === 'string' && eventIds.includes(x))
+              .slice(0, 100)
+          : [],
+        relationships,
+        interpretation: {
+          humor: level(interpretation.humor),
+          narrativeValue: level(interpretation.narrativeValue),
+          actionRelevance: level(interpretation.actionRelevance),
+        },
+        confidence: typeof v.confidence === 'number' ? Math.max(0, Math.min(1, v.confidence)) : 0,
+        uncertainties: Array.isArray(v.uncertainties)
+          ? v.uncertainties
+              .filter((x): x is string => typeof x === 'string')
+              .map((x) => x.slice(0, 800))
+              .slice(0, 30)
+          : [],
+      },
+    ];
+  });
+  if (new Set(conversations.map((c) => c.id)).size !== conversations.length)
+    throw new Error('Conversation Understanding has duplicate conversation IDs');
+  return { clipId, conversations };
+}
+export async function conversationUnderstanding(
+  root: string,
+  db: Store,
+  input: {
+    clipId: string;
+    duration: number;
+    transcript: Array<{ id: string; start: number; end: number; text: string }>;
+    events: Array<{ id: string; start: number; end: number; kind: string; detail: string }>;
+    config: Config;
+  },
+  onEvent?: (message: string) => void,
+) {
+  const profile = profileFor(input.config, 'understanding');
+  if (!['codex', 'claude', 'deepseek'].includes(profile.provider))
+    throw new Error('Conversation Understanding requires a configured AI provider');
+  const prompt = await getPrompt(root, 'conversation-understanding');
+  const key = hash({
+    stage: 'conversation-v1',
+    prompt,
+    profile,
+    transcript: input.transcript,
+    events: input.events,
+  });
+  const cached = db.stageArtifact(input.clipId, 'conversation-understanding', key);
+  if (cached?.status === 'success')
+    return { conversation: JSON.parse(cached.payload_json) as ConversationArtifact, cached: true };
+  const folder = path.join(artifactDir(root, input.clipId), 'understanding');
+  await mkdir(folder, { recursive: true });
+  const file = path.join(folder, 'conversations.json'),
+    output = path.join(folder, 'conversations-response.txt');
+  const request = `${prompt}\n\nReturn ONLY JSON: {conversations:[{conversationId,start,end,summary,topic,type,narrativePhases:[{type,start,end}],dominantModality,visualActivity,keyUtteranceIds,relatedEventIds,relationships:[{sourceId,targetId,type,evidenceIds,confidence,reason}],interpretation:{humor,narrativeValue,actionRelevance},confidence,uncertainties}]}. Only use supplied IDs.\n\nTRANSCRIPT:\n${JSON.stringify(input.transcript)}\n\nMEDIA EVENTS:\n${JSON.stringify(input.events)}`;
+  await writeFile(path.join(folder, 'conversations-prompt.txt'), request);
+  onEvent?.(`Conversation Understanding: invoking ${profile.provider}`);
+  try {
+    const response = await runAgentText(
+      profile.provider as Exclude<AgentProvider, 'none' | 'cursor'>,
+      profile.model,
+      root,
+      request,
+      output,
+      10 * 60 * 1000,
+    );
+    const conversation = parseConversationUnderstanding(
+      response,
+      input.duration,
+      input.clipId,
+      input.transcript.map((x) => x.id),
+      input.events.map((x) => x.id),
+    );
+    await writeFile(file, JSON.stringify(conversation, null, 2));
+    db.saveStageArtifact(
+      input.clipId,
+      'conversation-understanding',
+      key,
+      profile.provider,
+      profile.model,
+      'success',
+      file,
+      conversation,
+      null,
+    );
+    return { conversation, cached: false };
+  } catch (error) {
+    db.saveStageArtifact(
+      input.clipId,
+      'conversation-understanding',
+      key,
+      profile.provider,
+      profile.model,
+      'failed',
+      file,
+      null,
+      (error as Error).message,
+    );
+    throw error;
+  }
 }
 export function parseDeepAction(text: string, duration: number, clipId: string): Understanding {
   const raw = json(text);
@@ -200,6 +468,7 @@ export async function baseUnderstanding(
     duration: number;
     media: unknown;
     images: string[];
+    conversation?: ConversationArtifact;
     config: Config;
     runId?: string;
   },
@@ -218,7 +487,10 @@ export async function baseUnderstanding(
   const cached = db.stageArtifact(input.clipId, 'deep-action', key);
   if (cached?.status === 'success')
     return {
-      understanding: JSON.parse(cached.payload_json) as Understanding,
+      understanding: {
+        ...(JSON.parse(cached.payload_json) as Understanding),
+        conversation: input.conversation,
+      },
       cached: true,
     };
   const folder = path.join(artifactDir(root, input.clipId), 'understanding');
@@ -237,7 +509,10 @@ export async function baseUnderstanding(
       output,
       10 * 60 * 1000,
     );
-    const understanding = parseDeepAction(response, input.duration, input.clipId);
+    const understanding = {
+      ...parseDeepAction(response, input.duration, input.clipId),
+      conversation: input.conversation,
+    };
     await writeFile(file, JSON.stringify(understanding, null, 2));
     db.saveStageArtifact(
       input.clipId,
@@ -271,6 +546,7 @@ export function parseContextualEditing(
   text: string,
   duration: number,
   actions: DeepAction[],
+  conversationIds: string[] = [],
 ): EditingDecision[] {
   const raw = json(text);
   if (!Array.isArray(raw.candidates)) throw new Error('Contextual Editing requires candidates');
@@ -316,6 +592,23 @@ export function parseContextualEditing(
           typeof v.confidence === 'number' && Number.isFinite(v.confidence)
             ? Math.max(0, Math.min(1, v.confidence))
             : 0,
+        conversationId:
+          typeof v.conversationId === 'string' && conversationIds.includes(v.conversationId)
+            ? v.conversationId
+            : undefined,
+        narrativePhaseCoverage: Array.isArray(v.narrativePhaseCoverage)
+          ? v.narrativePhaseCoverage
+              .filter((x): x is string =>
+                ['setup', 'development', 'payoff', 'reaction', 'resolution'].includes(x),
+              )
+              .slice(0, 5)
+          : [],
+        missingContextRisks: Array.isArray(v.missingContextRisks)
+          ? v.missingContextRisks
+              .filter((x): x is string => typeof x === 'string')
+              .map((x) => x.slice(0, 400))
+              .slice(0, 10)
+          : [],
       },
     ];
   });
@@ -359,7 +652,7 @@ export async function contextualEditing(
   await mkdir(folder, { recursive: true });
   const file = path.join(folder, 'contextual-editing.json'),
     output = path.join(folder, 'contextual-editing-response.txt');
-  const request = `${prompt}\n\nReturn ONLY JSON: {candidates:[{actionId,include,start,end,title,description,reason,accelerate:[{start,end,speed}],overlaps:string[],confidence 0..1}]}. Include one decision for every action; excluded actions still require actionId, include:false, reason and confidence.\n\nEDITING CONTEXT:\n${input.context}\n\nDEEP ACTION ANALYSIS:\n${JSON.stringify(input.understanding)}`;
+  const request = `${prompt}\n\nReturn ONLY JSON: {candidates:[{actionId,include,start,end,title,description,reason,accelerate:[{start,end,speed}],overlaps:string[],confidence,conversationId?,narrativePhaseCoverage:string[],missingContextRisks:string[]}]}. Include one decision for every action; excluded actions still require actionId, include:false, reason and confidence.\n\nEDITING CONTEXT:\n${input.context}\n\nDEEP ACTION ANALYSIS:\n${JSON.stringify(input.understanding)}`;
   await writeFile(path.join(folder, 'contextual-editing-prompt.txt'), request);
   try {
     const response = await runAgentText(
@@ -370,7 +663,12 @@ export async function contextualEditing(
       output,
       10 * 60 * 1000,
     );
-    const decisions = parseContextualEditing(response, input.duration, input.understanding.actions);
+    const decisions = parseContextualEditing(
+      response,
+      input.duration,
+      input.understanding.actions,
+      input.understanding.conversation?.conversations.map((c) => c.id),
+    );
     await writeFile(file, JSON.stringify(decisions, null, 2));
     db.saveStageArtifact(
       input.clipId,

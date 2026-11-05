@@ -8,6 +8,7 @@
 - `highlights(id, clip_id, start, end, title, description, score, status, origin, created_at)`
 - `projects(id, name, created_at)` and `project_items(project_id, highlight_id, position)`
 - `stage_artifacts(clip_id, stage, cache_key, ...)` stores immutable, cache-keyed Deep Action, contextual editing, and critical-review payloads. A failed optional stage is recorded rather than silently reused. Deep Action entries contain uniquely identified complete actions, narrative phases, timestamped evidence, and uncertainty; contextual decisions must decide every action exactly once.
+- `stage_artifacts` also stores `conversation-understanding` payloads. Conversation IDs, `utt-*` transcript IDs, and supplied event IDs are stable only within the associated clip artifact; relationships must reference those IDs, include evidence, confidence, and a reason. Transcripts remain unchanged.
 - `highlight_sets(context_key, cache_key)` and `highlight_set_items(...)` retain editing candidates per creative context. They never delete approved or rejected highlight rows.
 - `transcript_segments` has a workspace-local FTS5 index refreshed atomically with each transcript revision; normal search never returns superseded segment rows.
 - `highlight_feedback` and `missed_moments` are user-owned annotations, separate from generated highlights and retained when AI candidates are regenerated.
