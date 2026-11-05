@@ -613,7 +613,9 @@ export class Store {
       const insert = this.db.prepare(
         'INSERT INTO transcript_segments(clip_id,start,end,text) VALUES(?,?,?,?)',
       );
-      const index = this.db.prepare('INSERT INTO transcript_search(segment_id,clip_id,text) VALUES(?,?,?)');
+      const index = this.db.prepare(
+        'INSERT INTO transcript_search(segment_id,clip_id,text) VALUES(?,?,?)',
+      );
       for (const s of segments) {
         const saved = insert.run(clipId, s.start, s.end, s.text);
         index.run(Number(saved.lastInsertRowid), clipId, s.text);
@@ -648,7 +650,9 @@ export class Store {
   }
   feedback(highlightId: string) {
     return this.db
-      .prepare('SELECT * FROM highlight_feedback WHERE highlight_id=? ORDER BY created_at DESC,id DESC')
+      .prepare(
+        'SELECT * FROM highlight_feedback WHERE highlight_id=? ORDER BY created_at DESC,id DESC',
+      )
       .all(highlightId);
   }
   saveFeedback(input: {
@@ -659,15 +663,27 @@ export class Store {
     favorite?: boolean;
   }) {
     if (!this.highlight(input.highlightId)) throw new Error('Highlight not found');
-    if (input.rating !== undefined && (!Number.isInteger(input.rating) || input.rating < 1 || input.rating > 5))
+    if (
+      input.rating !== undefined &&
+      (!Number.isInteger(input.rating) || input.rating < 1 || input.rating > 5)
+    )
       throw new Error('Rating must be 1-5');
     if (input.category !== undefined && !FEEDBACK_CATEGORIES.includes(input.category))
       throw new Error('Invalid feedback category');
     if (input.notes !== undefined && (typeof input.notes !== 'string' || input.notes.length > 4000))
       throw new Error('Invalid feedback notes');
     this.db
-      .prepare('INSERT INTO highlight_feedback(highlight_id,rating,category,notes,favorite,created_at) VALUES(?,?,?,?,?,?)')
-      .run(input.highlightId, input.rating ?? null, input.category ?? null, input.notes ?? '', input.favorite ? 1 : 0, new Date().toISOString());
+      .prepare(
+        'INSERT INTO highlight_feedback(highlight_id,rating,category,notes,favorite,created_at) VALUES(?,?,?,?,?,?)',
+      )
+      .run(
+        input.highlightId,
+        input.rating ?? null,
+        input.category ?? null,
+        input.notes ?? '',
+        input.favorite ? 1 : 0,
+        new Date().toISOString(),
+      );
     return this.feedback(input.highlightId)[0];
   }
   createMissedMoment(input: {
@@ -680,16 +696,47 @@ export class Store {
     rating?: number;
   }) {
     const clip = this.clip(input.clipId);
-    if (!clip || !Number.isFinite(input.start) || !Number.isFinite(input.end) || input.start < 0 || input.end <= input.start || input.end > clip.duration + 0.05)
+    if (
+      !clip ||
+      !Number.isFinite(input.start) ||
+      !Number.isFinite(input.end) ||
+      input.start < 0 ||
+      input.end <= input.start ||
+      input.end > clip.duration + 0.05
+    )
       throw new Error('Invalid missed-moment range');
-    if (input.category !== undefined && !FEEDBACK_CATEGORIES.includes(input.category)) throw new Error('Invalid feedback category');
-    if (input.rating !== undefined && (!Number.isInteger(input.rating) || input.rating < 1 || input.rating > 5)) throw new Error('Rating must be 1-5');
-    if (input.description !== undefined && (typeof input.description !== 'string' || input.description.length > 4000)) throw new Error('Invalid missed-moment description');
-    this.db.prepare('INSERT INTO missed_moments VALUES(?,?,?,?,?,?,?,?)').run(input.id,input.clipId,input.start,input.end,input.description ?? '',input.category ?? null,input.rating ?? null,new Date().toISOString());
+    if (input.category !== undefined && !FEEDBACK_CATEGORIES.includes(input.category))
+      throw new Error('Invalid feedback category');
+    if (
+      input.rating !== undefined &&
+      (!Number.isInteger(input.rating) || input.rating < 1 || input.rating > 5)
+    )
+      throw new Error('Rating must be 1-5');
+    if (
+      input.description !== undefined &&
+      (typeof input.description !== 'string' || input.description.length > 4000)
+    )
+      throw new Error('Invalid missed-moment description');
+    this.db
+      .prepare('INSERT INTO missed_moments VALUES(?,?,?,?,?,?,?,?)')
+      .run(
+        input.id,
+        input.clipId,
+        input.start,
+        input.end,
+        input.description ?? '',
+        input.category ?? null,
+        input.rating ?? null,
+        new Date().toISOString(),
+      );
     return this.db.prepare('SELECT * FROM missed_moments WHERE id=?').get(input.id);
   }
   missedMoments(clipId?: string) {
-    return clipId ? this.db.prepare('SELECT * FROM missed_moments WHERE clip_id=? ORDER BY created_at DESC').all(clipId) : this.db.prepare('SELECT * FROM missed_moments ORDER BY created_at DESC').all();
+    return clipId
+      ? this.db
+          .prepare('SELECT * FROM missed_moments WHERE clip_id=? ORDER BY created_at DESC')
+          .all(clipId)
+      : this.db.prepare('SELECT * FROM missed_moments ORDER BY created_at DESC').all();
   }
   setTranscript(clipId: string, transcript: string) {
     this.db.prepare('UPDATE clips SET transcript=? WHERE id=?').run(transcript, clipId);
@@ -704,6 +751,34 @@ export class Store {
     this.db
       .prepare("DELETE FROM highlights WHERE clip_id=? AND status='pending_review'")
       .run(clipId);
+  }
+  /** Remove derived review items only; clips, artifacts, and projects remain intact. */
+  deleteHighlights(ids?: string[]) {
+    const selected = ids === undefined ? this.highlights().map((h) => h.id) : [...new Set(ids)];
+    if (!selected.length) return 0;
+    if (selected.some((id) => !/^[a-zA-Z0-9_-]{1,120}$/.test(id)))
+      throw new Error('Invalid highlight ID');
+    const marks = selected.map(() => '?').join(',');
+    this.db.exec('BEGIN');
+    try {
+      this.db
+        .prepare(`DELETE FROM highlight_feedback WHERE highlight_id IN (${marks})`)
+        .run(...selected);
+      this.db
+        .prepare(`DELETE FROM highlight_set_items WHERE highlight_id IN (${marks})`)
+        .run(...selected);
+      this.db
+        .prepare(`DELETE FROM project_items WHERE highlight_id IN (${marks})`)
+        .run(...selected);
+      const result = this.db
+        .prepare(`DELETE FROM highlights WHERE id IN (${marks})`)
+        .run(...selected);
+      this.db.exec('COMMIT');
+      return Number(result.changes);
+    } catch (error) {
+      this.db.exec('ROLLBACK');
+      throw error;
+    }
   }
   upsertHighlight(h: Highlight) {
     this.db

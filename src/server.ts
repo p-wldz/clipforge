@@ -672,6 +672,17 @@ export function startServer(root: string, port: number, host = '127.0.0.1') {
         return send(res, 200, db.skipped());
       if (url.pathname === '/api/highlights' && req.method === 'GET')
         return send(res, 200, db.highlights());
+      if (url.pathname === '/api/highlights' && req.method === 'DELETE') {
+        const body = await jsonBody(req);
+        if (
+          body.all !== true &&
+          (!Array.isArray(body.ids) || body.ids.some((id) => typeof id !== 'string'))
+        )
+          throw new Error('Provide highlight IDs or all:true');
+        return send(res, 200, {
+          deleted: db.deleteHighlights(body.all === true ? undefined : (body.ids as string[])),
+        });
+      }
       if (
         parts[0] === 'api' &&
         parts[1] === 'highlights' &&
@@ -773,6 +784,14 @@ export function startServer(root: string, port: number, host = '127.0.0.1') {
           if (key in patch && typeof patch[key] !== 'string') throw new Error(`Invalid ${key}`);
         return send(res, 200, db.updateHighlight(parts[2], patch));
       }
+      if (
+        parts[0] === 'api' &&
+        parts[1] === 'highlights' &&
+        parts[2] &&
+        parts.length === 3 &&
+        req.method === 'DELETE'
+      )
+        return send(res, 200, { deleted: db.deleteHighlights([parts[2]]) });
       if (
         parts[0] === 'api' &&
         parts[1] === 'projects' &&

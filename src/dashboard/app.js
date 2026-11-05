@@ -63,6 +63,7 @@ let clips = [],
   proposal = null,
   project = null,
   selected = null,
+  selectedHighlightIds = new Set(),
   settings = null,
   inventory = null,
   analysisRuns = [],
@@ -153,6 +154,37 @@ function openTranscriptMoment(clipId, start) {
   } else notify('This transcript has no highlight yet; create one from a clip review.');
 }
 mountTranscriptSearch();
+function mountHighlightDeletion() {
+  $('#add-selected-to-studio').insertAdjacentHTML(
+    'afterend',
+    '<button id="delete-selected-highlights" class="button-secondary danger-button" disabled>Delete selected</button><button id="delete-all-highlights" class="button-secondary danger-button">Delete all</button>',
+  );
+  const remove = async (body, label) => {
+    if (
+      !confirm(
+        `${label}? This removes highlights from film drafts but never deletes source videos or analysis artifacts.`,
+      )
+    )
+      return;
+    const result = await api('/api/highlights', { method: 'DELETE', body: JSON.stringify(body) });
+    selectedHighlightIds.clear();
+    selected = null;
+    $('#review').innerHTML =
+      '<div class="empty">Select a highlight to see its video and adjust the cut.</div>';
+    await reload();
+    notify(`${result.deleted} highlight${result.deleted === 1 ? '' : 's'} deleted`);
+  };
+  $('#delete-selected-highlights').onclick = () =>
+    remove(
+      { ids: [...selectedHighlightIds] },
+      `Delete ${selectedHighlightIds.size} selected highlight(s)`,
+    ).catch((error) => notify(error.message));
+  $('#delete-all-highlights').onclick = () =>
+    remove({ all: true }, `Delete all ${highlights.length} highlights`).catch((error) =>
+      notify(error.message),
+    );
+}
+mountHighlightDeletion();
 async function reload() {
   try {
     [clips, highlights, projects, analyses] = await Promise.all(
@@ -187,6 +219,23 @@ function renderLibrary() {
       )
       .join('') || '<div class="empty">No highlights match your search.</div>';
   $$('[data-h]').forEach((el) => (el.onclick = () => showHighlight(el.dataset.h)));
+  $$('[data-h]').forEach((card) => {
+    const id = card.dataset.h;
+    card.insertAdjacentHTML(
+      'afterbegin',
+      `<input class="highlight-select" type="checkbox" data-highlight-select="${safe(id)}" ${selectedHighlightIds.has(id) ? 'checked' : ''} aria-label="Select highlight">`,
+    );
+  });
+  $$('[data-highlight-select]').forEach((input) => {
+    input.onclick = (event) => event.stopPropagation();
+    input.onchange = () => {
+      input.checked
+        ? selectedHighlightIds.add(input.dataset.highlightSelect)
+        : selectedHighlightIds.delete(input.dataset.highlightSelect);
+      $('#delete-selected-highlights').disabled = !selectedHighlightIds.size;
+    };
+  });
+  $('#delete-selected-highlights').disabled = !selectedHighlightIds.size;
 }
 $('#highlight-query').oninput = renderLibrary;
 $('#filter').onchange = renderLibrary;
@@ -201,6 +250,10 @@ async function showHighlight(id) {
   $('#clip-editorial').insertAdjacentHTML(
     'afterend',
     '<details class="clip-meta"><summary>Conversation understanding</summary><div id="clip-conversations" class="cards-list">Loading…</div></details>',
+  );
+  $('#review-to-film').insertAdjacentHTML(
+    'beforebegin',
+    '<button id="review-delete" class="button-secondary danger-button">Delete</button>',
   );
   const update = async (status) => {
     try {
@@ -222,6 +275,19 @@ async function showHighlight(id) {
   $('#review-to-film').onclick = async () => {
     navigate('studio');
     await addHighlightIds([h.id]);
+  };
+  $('#review-delete').onclick = async () => {
+    if (!confirm(`Delete “${h.title}”? This cannot be undone.`)) return;
+    try {
+      await api(`/api/highlights/${encodeURIComponent(h.id)}`, { method: 'DELETE' });
+      selectedHighlightIds.delete(h.id);
+      selected = null;
+      $('#review').innerHTML = '<div class="empty">Highlight deleted.</div>';
+      await reload();
+      notify('Highlight deleted');
+    } catch (error) {
+      notify(error.message);
+    }
   };
   $('#review').insertAdjacentHTML(
     'beforeend',

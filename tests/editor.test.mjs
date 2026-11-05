@@ -80,6 +80,18 @@ test('editor project stores independent trims, ordering and review state', async
     db.close();
   }
 });
+test('deleting highlights removes film references without deleting clips', async () => {
+  const { db } = await fixture();
+  try {
+    db.createEditorProject('p', 'My film', ['h1'], 'Story');
+    assert.equal(db.deleteHighlights(['h1']), 1);
+    assert.equal(db.highlight('h1'), undefined);
+    assert.equal(db.clip('c1').id, 'c1');
+    assert.deepEqual(db.projectItems('p'), []);
+  } finally {
+    db.close();
+  }
+});
 test('editor endpoints create, load and save montage drafts', async () => {
   const { root, db } = await fixture();
   db.close();
@@ -124,6 +136,32 @@ test('editor endpoints create, load and save montage drafts', async () => {
       items: [{ highlightId: 'h2', start: -1, end: 20 }],
     });
     assert.equal(invalid.status, 400);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+test('highlight API deletes one, selected, or all highlights', async () => {
+  const { root, db } = await fixture();
+  db.close();
+  const server = startServer(root, 0);
+  await new Promise((resolve) => server.once('listening', resolve));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  try {
+    let response = await fetch(base + '/api/highlights/h1', { method: 'DELETE' });
+    assert.equal(response.status, 200);
+    assert.equal((await response.json()).deleted, 1);
+    response = await fetch(base + '/api/highlights', {
+      method: 'DELETE',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ ids: ['h2'] }),
+    });
+    assert.equal((await response.json()).deleted, 1);
+    response = await fetch(base + '/api/highlights', {
+      method: 'DELETE',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ all: true }),
+    });
+    assert.equal((await response.json()).deleted, 0);
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }

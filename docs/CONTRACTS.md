@@ -25,6 +25,10 @@ Highlight `status`: `pending_review | approved | rejected`. `origin`: `heuristic
 - `GET /media/:clipId` with byte-range support; original media, local server only
 - `GET /thumbnail/:clipId`
 
+## Highlight deletion
+
+The dashboard can delete one, selected, or all highlights after confirmation. This removes associated feedback, saved editing-set entries, and montage item references, but does not delete source media, clips, or inspectable analysis artifacts.
+
 ## Security
 Dashboard binds `127.0.0.1` by default. Do not expose without auth, CSRF protection, restrictive CORS and file access audit. No shell for external tools. Restrict all media access to DB-known videos, no arbitrary file fetch route. Agent output is untrusted, validated and truncated. Original inputs never overwritten.
 
