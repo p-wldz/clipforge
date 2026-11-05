@@ -3,3 +3,5 @@ dist/
 .clipforge/
 *.log
 .DS_Store
+
+tools/__pycache__
