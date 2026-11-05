@@ -108,6 +108,46 @@ function navigate(page) {
 $$('.nav').forEach((el) => (el.onclick = () => navigate(el.dataset.page)));
 $('#go-studio').onclick = () => navigate('studio');
 $('#refresh').onclick = () => reload();
+function mountTranscriptSearch() {
+  if ($('#transcript-query')) return;
+  const target = $('#page-home .stats');
+  target.insertAdjacentHTML(
+    'afterend',
+    `<section class="panel"><div class="panel-heading"><div><h2>Search dialogue</h2><p>Search local transcripts and jump to a matching moment.</p></div></div><div class="toolbar"><input id="transcript-query" type="search" placeholder="tank, behind us, what the fuck…"><button id="transcript-search" class="button-secondary">Search</button></div><div id="transcript-results" class="cards-list"></div></section>`,
+  );
+  const search = async () => {
+    const query = $('#transcript-query').value.trim();
+    if (!query) return ($('#transcript-results').innerHTML = '');
+    const rows = await api('/api/transcripts/search?q=' + encodeURIComponent(query));
+    $('#transcript-results').innerHTML = rows.length
+      ? rows
+          .map(
+            (r) =>
+              `<button class="highlight-card" data-transcript-clip="${safe(r.clip_id)}" data-transcript-start="${r.start}"><div class="highlight-copy"><strong>${safe(fileName(r.source_path))} · ${seconds(r.start)}</strong><p>${safe(r.text)}</p><small>${safe(r.context || '')}</small></div></button>`,
+          )
+          .join('')
+      : '<div class="empty">No transcript matches.</div>';
+    $$('[data-transcript-clip]').forEach((button) =>
+      (button.onclick = () => openTranscriptMoment(button.dataset.transcriptClip, Number(button.dataset.transcriptStart))),
+    );
+  };
+  $('#transcript-search').onclick = () => search().catch((e) => notify(e.message));
+  $('#transcript-query').onkeydown = (e) => {
+    if (e.key === 'Enter') search().catch((error) => notify(error.message));
+  };
+}
+function openTranscriptMoment(clipId, start) {
+  const clipHighlights = highlights.filter((h) => h.clip_id === clipId);
+  if (clipHighlights[0]) {
+    navigate('library');
+    showHighlight(clipHighlights[0].id).then(() => {
+      const video = $('#review-player');
+      video.currentTime = start;
+      video.play().catch(() => {});
+    });
+  } else notify('This transcript has no highlight yet; create one from a clip review.');
+}
+mountTranscriptSearch();
 async function reload() {
   try {
     [clips, highlights, projects, analyses] = await Promise.all(
@@ -174,6 +214,45 @@ async function showHighlight(id) {
     navigate('studio');
     await addHighlightIds([h.id]);
   };
+  $('#review').insertAdjacentHTML(
+    'beforeend',
+    `<details class="clip-meta"><summary>Your feedback</summary><div class="range-fields"><label>Rating<select id="feedback-rating"><option value="">No rating</option>${[1, 2, 3, 4, 5].map((n) => `<option value="${n}">${n} star${n === 1 ? '' : 's'}</option>`).join('')}</select></label><label>Category<select id="feedback-category"><option value="">Choose one</option>${['too_short','too_long','starts_too_late','ends_too_early','missed_important_action','missing_context','missing_reaction','wrong_interpretation','not_interesting','repetitive','bad_audio','funny_moment','great_action','excellent_storytelling'].map((x) => `<option value="${x}">${safe(x.replaceAll('_', ' '))}</option>`).join('')}</select></label></div><label>Notes<textarea id="feedback-notes" rows="2" placeholder="Optional feedback for future review"></textarea></label><label class="checkbox-row"><input id="feedback-favorite" type="checkbox"> Favorite</label><button id="feedback-save" class="button-secondary">Save feedback</button><div id="feedback-history" class="muted little"></div></details><details class="clip-meta"><summary>Mark a missed moment</summary><p class="muted little">Uses the current cut range; adjust start/end above first.</p><label>Description<textarea id="missed-description" rows="2" placeholder="What did Clipforge miss?"></textarea></label><button id="missed-save" class="button-secondary">Save missed moment</button></details>`,
+  );
+  const renderFeedback = async () => {
+    const rows = await api(`/api/highlights/${encodeURIComponent(h.id)}/feedback`);
+    $('#feedback-history').textContent = rows.length
+      ? rows.map((r) => `${r.rating ? `${r.rating}/5` : ''}${r.category ? ` · ${r.category.replaceAll('_', ' ')}` : ''}${r.favorite ? ' · favorite' : ''}`).join('\n')
+      : 'No feedback yet.';
+  };
+  $('#feedback-save').onclick = async () => {
+    try {
+      await clickTask($('#feedback-save'), 'Saving...', async () => {
+        await send(`/api/highlights/${encodeURIComponent(h.id)}/feedback`, 'POST', {
+          ...(Number($('#feedback-rating').value) ? { rating: Number($('#feedback-rating').value) } : {}),
+          ...($('#feedback-category').value ? { category: $('#feedback-category').value } : {}),
+          notes: $('#feedback-notes').value,
+          favorite: $('#feedback-favorite').checked,
+        });
+        await renderFeedback();
+        notify('Feedback saved');
+      });
+    } catch {}
+  };
+  $('#missed-save').onclick = async () => {
+    try {
+      await clickTask($('#missed-save'), 'Saving...', async () => {
+        await send('/api/missed-moments', 'POST', {
+          clipId: h.clip_id,
+          start: Number($('#review-start').value),
+          end: Number($('#review-end').value),
+          description: $('#missed-description').value,
+          category: 'missed_important_action',
+        });
+        notify('Missed moment saved for your next targeted reanalysis');
+      });
+    } catch {}
+  };
+  renderFeedback().catch((e) => notify(e.message));
   const v = $('#review-player');
   v.addEventListener('loadedmetadata', () => {
     v.currentTime = h.start;

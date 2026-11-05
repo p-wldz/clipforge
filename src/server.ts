@@ -672,6 +672,68 @@ export function startServer(root: string, port: number, host = '127.0.0.1') {
         return send(res, 200, db.skipped());
       if (url.pathname === '/api/highlights' && req.method === 'GET')
         return send(res, 200, db.highlights());
+      if (
+        parts[0] === 'api' &&
+        parts[1] === 'highlights' &&
+        parts[2] &&
+        parts[3] === 'feedback' &&
+        req.method === 'GET'
+      )
+        return send(res, 200, db.feedback(parts[2]));
+      if (
+        parts[0] === 'api' &&
+        parts[1] === 'highlights' &&
+        parts[2] &&
+        parts[3] === 'feedback' &&
+        req.method === 'POST'
+      ) {
+        const body = await jsonBody(req);
+        if (
+          ('rating' in body && typeof body.rating !== 'number') ||
+          ('category' in body && typeof body.category !== 'string') ||
+          ('notes' in body && typeof body.notes !== 'string') ||
+          ('favorite' in body && typeof body.favorite !== 'boolean')
+        )
+          throw new Error('Invalid feedback');
+        return send(
+          res,
+          201,
+          db.saveFeedback({
+            highlightId: parts[2],
+            rating: body.rating as number | undefined,
+            category: body.category as import('./core/db.js').FeedbackCategory | undefined,
+            notes: body.notes as string | undefined,
+            favorite: body.favorite as boolean | undefined,
+          }),
+        );
+      }
+      if (url.pathname === '/api/missed-moments' && req.method === 'GET')
+        return send(res, 200, db.missedMoments(url.searchParams.get('clipId') ?? undefined));
+      if (url.pathname === '/api/missed-moments' && req.method === 'POST') {
+        const body = await jsonBody(req);
+        if (
+          typeof body.clipId !== 'string' ||
+          typeof body.start !== 'number' ||
+          typeof body.end !== 'number' ||
+          ('description' in body && typeof body.description !== 'string') ||
+          ('category' in body && typeof body.category !== 'string') ||
+          ('rating' in body && typeof body.rating !== 'number')
+        )
+          throw new Error('Invalid missed moment');
+        return send(
+          res,
+          201,
+          db.createMissedMoment({
+            id: newId(),
+            clipId: body.clipId,
+            start: body.start,
+            end: body.end,
+            description: body.description as string | undefined,
+            category: body.category as import('./core/db.js').FeedbackCategory | undefined,
+            rating: body.rating as number | undefined,
+          }),
+        );
+      }
       if (url.pathname === '/api/projects' && req.method === 'GET')
         return send(res, 200, db.projects());
       if (url.pathname === '/api/projects' && req.method === 'POST') {

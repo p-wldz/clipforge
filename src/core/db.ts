@@ -23,6 +23,23 @@ export type Highlight = {
   origin: string;
   created_at: string;
 };
+export const FEEDBACK_CATEGORIES = [
+  'too_short',
+  'too_long',
+  'starts_too_late',
+  'ends_too_early',
+  'missed_important_action',
+  'missing_context',
+  'missing_reaction',
+  'wrong_interpretation',
+  'not_interesting',
+  'repetitive',
+  'bad_audio',
+  'funny_moment',
+  'great_action',
+  'excellent_storytelling',
+] as const;
+export type FeedbackCategory = (typeof FEEDBACK_CATEGORIES)[number];
 export class Store {
   private db: DatabaseSync;
   constructor(root: string) {
@@ -34,6 +51,10 @@ export class Store {
       CREATE TABLE IF NOT EXISTS clip_scans(id TEXT PRIMARY KEY,source_path TEXT NOT NULL,duration REAL,has_audio INTEGER,decision TEXT NOT NULL,reason TEXT,scanned_at TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS transcript_segments(id INTEGER PRIMARY KEY AUTOINCREMENT,clip_id TEXT NOT NULL REFERENCES clips(id),start REAL NOT NULL,end REAL NOT NULL,text TEXT NOT NULL);
       CREATE INDEX IF NOT EXISTS idx_segments_clip_start ON transcript_segments(clip_id,start);
+      CREATE VIRTUAL TABLE IF NOT EXISTS transcript_search USING fts5(segment_id UNINDEXED,clip_id UNINDEXED,text);
+      CREATE TABLE IF NOT EXISTS highlight_feedback(id INTEGER PRIMARY KEY AUTOINCREMENT,highlight_id TEXT NOT NULL REFERENCES highlights(id),rating INTEGER CHECK(rating BETWEEN 1 AND 5),category TEXT,notes TEXT NOT NULL DEFAULT '',favorite INTEGER NOT NULL DEFAULT 0,created_at TEXT NOT NULL);
+      CREATE INDEX IF NOT EXISTS idx_feedback_highlight ON highlight_feedback(highlight_id,created_at DESC);
+      CREATE TABLE IF NOT EXISTS missed_moments(id TEXT PRIMARY KEY,clip_id TEXT NOT NULL REFERENCES clips(id),start REAL NOT NULL,end REAL NOT NULL,description TEXT NOT NULL DEFAULT '',category TEXT,rating INTEGER CHECK(rating BETWEEN 1 AND 5),created_at TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS analysis_runs(id TEXT PRIMARY KEY,started_at TEXT NOT NULL,finished_at TEXT,status TEXT NOT NULL,provider TEXT,source_count INTEGER NOT NULL,processed_count INTEGER NOT NULL DEFAULT 0,current_file TEXT,current_stage TEXT,error TEXT);
       CREATE TABLE IF NOT EXISTS analysis_events(id INTEGER PRIMARY KEY AUTOINCREMENT,run_id TEXT NOT NULL,at TEXT NOT NULL,level TEXT NOT NULL,stage TEXT NOT NULL,clip_id TEXT,message TEXT NOT NULL);
       CREATE INDEX IF NOT EXISTS idx_analysis_events_run ON analysis_events(run_id,id);
@@ -588,10 +609,15 @@ export class Store {
     this.db.exec('BEGIN');
     try {
       this.db.prepare('DELETE FROM transcript_segments WHERE clip_id=?').run(clipId);
+      this.db.prepare('DELETE FROM transcript_search WHERE clip_id=?').run(clipId);
       const insert = this.db.prepare(
         'INSERT INTO transcript_segments(clip_id,start,end,text) VALUES(?,?,?,?)',
       );
-      for (const s of segments) insert.run(clipId, s.start, s.end, s.text);
+      const index = this.db.prepare('INSERT INTO transcript_search(segment_id,clip_id,text) VALUES(?,?,?)');
+      for (const s of segments) {
+        const saved = insert.run(clipId, s.start, s.end, s.text);
+        index.run(Number(saved.lastInsertRowid), clipId, s.text);
+      }
       this.db.exec('COMMIT');
     } catch (e) {
       this.db.exec('ROLLBACK');
@@ -600,17 +626,70 @@ export class Store {
   }
   searchTranscripts(query: string) {
     if (!query.trim()) return [];
+    // FTS syntax is built only from words, so a search term cannot become an operator.
+    const words = query.match(/[\p{L}\p{N}_]+/gu) ?? [];
+    if (!words.length) return [];
+    const match = words.length === 1 ? `${words[0]}*` : `"${words.join(' ')}"`;
     return this.db
       .prepare(
-        `SELECT s.clip_id,c.source_path,s.start,s.end,s.text FROM transcript_segments s JOIN clips c ON c.id=s.clip_id WHERE instr(lower(s.text),lower(?))>0 ORDER BY c.source_path,s.start LIMIT 200`,
+        `SELECT s.clip_id,c.source_path,s.start,s.end,s.text,
+          (SELECT group_concat(text, ' ') FROM transcript_segments context WHERE context.clip_id=s.clip_id AND context.start>=s.start-12 AND context.end<=s.end+12) AS context
+         FROM transcript_search f JOIN transcript_segments s ON s.id=CAST(f.segment_id AS INTEGER) JOIN clips c ON c.id=s.clip_id
+         WHERE transcript_search MATCH ? ORDER BY c.source_path,s.start LIMIT 200`,
       )
-      .all(query.trim()) as Array<{
+      .all(match) as Array<{
       clip_id: string;
       source_path: string;
       start: number;
       end: number;
       text: string;
+      context: string;
     }>;
+  }
+  feedback(highlightId: string) {
+    return this.db
+      .prepare('SELECT * FROM highlight_feedback WHERE highlight_id=? ORDER BY created_at DESC,id DESC')
+      .all(highlightId);
+  }
+  saveFeedback(input: {
+    highlightId: string;
+    rating?: number;
+    category?: FeedbackCategory;
+    notes?: string;
+    favorite?: boolean;
+  }) {
+    if (!this.highlight(input.highlightId)) throw new Error('Highlight not found');
+    if (input.rating !== undefined && (!Number.isInteger(input.rating) || input.rating < 1 || input.rating > 5))
+      throw new Error('Rating must be 1-5');
+    if (input.category !== undefined && !FEEDBACK_CATEGORIES.includes(input.category))
+      throw new Error('Invalid feedback category');
+    if (input.notes !== undefined && (typeof input.notes !== 'string' || input.notes.length > 4000))
+      throw new Error('Invalid feedback notes');
+    this.db
+      .prepare('INSERT INTO highlight_feedback(highlight_id,rating,category,notes,favorite,created_at) VALUES(?,?,?,?,?,?)')
+      .run(input.highlightId, input.rating ?? null, input.category ?? null, input.notes ?? '', input.favorite ? 1 : 0, new Date().toISOString());
+    return this.feedback(input.highlightId)[0];
+  }
+  createMissedMoment(input: {
+    id: string;
+    clipId: string;
+    start: number;
+    end: number;
+    description?: string;
+    category?: FeedbackCategory;
+    rating?: number;
+  }) {
+    const clip = this.clip(input.clipId);
+    if (!clip || !Number.isFinite(input.start) || !Number.isFinite(input.end) || input.start < 0 || input.end <= input.start || input.end > clip.duration + 0.05)
+      throw new Error('Invalid missed-moment range');
+    if (input.category !== undefined && !FEEDBACK_CATEGORIES.includes(input.category)) throw new Error('Invalid feedback category');
+    if (input.rating !== undefined && (!Number.isInteger(input.rating) || input.rating < 1 || input.rating > 5)) throw new Error('Rating must be 1-5');
+    if (input.description !== undefined && (typeof input.description !== 'string' || input.description.length > 4000)) throw new Error('Invalid missed-moment description');
+    this.db.prepare('INSERT INTO missed_moments VALUES(?,?,?,?,?,?,?,?)').run(input.id,input.clipId,input.start,input.end,input.description ?? '',input.category ?? null,input.rating ?? null,new Date().toISOString());
+    return this.db.prepare('SELECT * FROM missed_moments WHERE id=?').get(input.id);
+  }
+  missedMoments(clipId?: string) {
+    return clipId ? this.db.prepare('SELECT * FROM missed_moments WHERE clip_id=? ORDER BY created_at DESC').all(clipId) : this.db.prepare('SELECT * FROM missed_moments ORDER BY created_at DESC').all();
   }
   setTranscript(clipId: string, transcript: string) {
     this.db.prepare('UPDATE clips SET transcript=? WHERE id=?').run(transcript, clipId);

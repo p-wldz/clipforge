@@ -34,9 +34,33 @@ test('transcript timestamps normalize and search by phrase', async () => {
       db.saveTranscriptSegments('a', segments);
       assert.equal(db.searchTranscripts('TANK')[0].start, 2);
       assert.equal(db.searchTranscripts('fire')[0].text, 'Fire!');
+      assert.equal(db.searchTranscripts('tan')[0].text, 'Tank behind us!');
+      assert.match(db.searchTranscripts('tank behind')[0].context, /Tank behind us/);
       assert.deepEqual(db.searchTranscripts('nonexistent'), []);
       db.saveTranscriptSegments('a', [{ start: 1, end: 2, text: 'New words' }]);
       assert.deepEqual(db.searchTranscripts('tank'), []);
+    } finally {
+      db.close();
+    }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('feedback and missed moments are stored separately from AI highlights', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'cf-feedback-'));
+  try {
+    await initWorkspace(root);
+    const db = new Store(root);
+    try {
+      db.upsertClip({ id: 'a', source_path: 'test.mp4', duration: 30, width: 640, height: 360, analyzed_at: new Date().toISOString(), transcript: null });
+      db.upsertHighlight({ id: 'h', clip_id: 'a', start: 2, end: 8, title: 'Moment', description: '', score: 50, status: 'pending_review', origin: 'heuristic', created_at: new Date().toISOString() });
+      db.saveFeedback({ highlightId: 'h', rating: 5, category: 'funny_moment', notes: 'Keep the reaction', favorite: true });
+      assert.equal(db.feedback('h')[0].rating, 5);
+      assert.equal(db.highlight('h').status, 'pending_review');
+      db.createMissedMoment({ id: 'm', clipId: 'a', start: 10, end: 14, description: 'Earlier setup', category: 'missing_context' });
+      assert.equal(db.missedMoments('a')[0].description, 'Earlier setup');
+      assert.throws(() => db.createMissedMoment({ id: 'bad', clipId: 'a', start: 0, end: 40 }), /Invalid missed-moment range/);
     } finally {
       db.close();
     }

@@ -45,6 +45,8 @@ Typecheck, tests, build; manual 5-second synthetic video test; docs updated. Sto
 - Keep original media immutable and generated artifacts local to `.clipforge`.
 - Transcript segments must preserve start/end and raw recognized speech; do not equate a spoken mention of an explosion with a visually verified explosion.
 - Local whisper is optional; if not installed, report the missing dependency instead of fabricating transcript data.
+- Transcript discovery is local SQLite FTS only; update its index atomically whenever transcript segments are replaced, and never surface obsolete segments in normal results.
+- Ratings, feedback, favorites, and missed moments are user-owned annotations. Keep them separate from generated highlights and preserve them across AI reanalysis.
 
 ## Audio-first pipeline (v0.4)
 - `src/pipeline/audio-signals.ts` extracts mono PCM with FFmpeg, computes 100 ms loudness/peaks, and emits **generic sound impulses**. Never present these as proven explosion/gunshot labels.

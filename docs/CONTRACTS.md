@@ -9,6 +9,8 @@
 - `projects(id, name, created_at)` and `project_items(project_id, highlight_id, position)`
 - `stage_artifacts(clip_id, stage, cache_key, ...)` stores immutable, cache-keyed Deep Action, contextual editing, and critical-review payloads. A failed optional stage is recorded rather than silently reused. Deep Action entries contain uniquely identified complete actions, narrative phases, timestamped evidence, and uncertainty; contextual decisions must decide every action exactly once.
 - `highlight_sets(context_key, cache_key)` and `highlight_set_items(...)` retain editing candidates per creative context. They never delete approved or rejected highlight rows.
+- `transcript_segments` has a workspace-local FTS5 index refreshed atomically with each transcript revision; normal search never returns superseded segment rows.
+- `highlight_feedback` and `missed_moments` are user-owned annotations, separate from generated highlights and retained when AI candidates are regenerated.
 
 Highlight `status`: `pending_review | approved | rejected`. `origin`: `heuristic | codex | claude`. Time units are seconds, start inclusive, end exclusive. Scores 0–100; heuristic score 50 represents an unverified candidate.
 
