@@ -17,6 +17,7 @@ import { ensurePrompts, getPrompt, promptPath, type PromptName } from './agents/
 import { smokeTestAgent } from './agents/smoke.js';
 import { suggestFilm, latestFilmProposal } from './agents/montage.js';
 import { contexts } from './pipeline/staged-ai.js';
+import { dashboardStatus, type DashboardRun } from './core/dashboard-status.js';
 const usage = `clipforge-local - local-first gameplay highlights\n\nCommands:\n  init [folder] [--interactive]         Initialize workspace (project questions)\n  doctor [--json]                      Check installed tools (no LLM)\n  setup [--interactive] [--transcription] [--sound-classifier] [--device cpu|cuda|auto] [--scope project|user] [--dry-run] [--yes]  Install missing dependencies with consent\n  usage [run-id]                       Reported token usage, billing observations and optional pricing estimates\n  ai models                            Discover provider model catalogs (access test still required)
   ai set <understanding|contextual|editing|critical|direction|clip|montage> <codex|claude|deepseek|none> [model-id]  Choose agent and model for a stage
   ai test <understanding|contextual|editing|critical|direction|clip|montage>  Make a real model call for a configured stage
@@ -497,7 +498,41 @@ async function main() {
     case 'dashboard': {
       if (!Number.isSafeInteger(port) || port < 1024 || port > 65535)
         throw new Error('Invalid port');
-      startServer(root, port);
+      const server = startServer(root, port);
+      let last = '';
+      const showStatus = () => {
+        const db = new Store(root);
+        try {
+          const status = dashboardStatus((db.runs()[0] as DashboardRun | undefined) ?? undefined);
+          if (status === last && !process.stdout.isTTY) return;
+          last = status;
+          if (process.stdout.isTTY) process.stdout.write(`\r\x1b[2K${status}`);
+          else console.log(status);
+        } finally {
+          db.close();
+        }
+      };
+      let timer: NodeJS.Timeout | undefined;
+      const begin = () => {
+        showStatus();
+        timer = setInterval(showStatus, 1000);
+        timer.unref();
+      };
+      if (server.listening) begin();
+      else server.once('listening', begin);
+      let stopping = false;
+      const stop = async () => {
+        if (stopping) return;
+        stopping = true;
+        if (timer) clearInterval(timer);
+        if (process.stdout.isTTY) process.stdout.write('\n');
+        server.close();
+        await server.abortAnalysis();
+        server.closeAllConnections();
+        process.exit(0);
+      };
+      process.once('SIGINT', stop);
+      process.once('SIGTERM', stop);
       return;
     }
     default:

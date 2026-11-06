@@ -60,17 +60,21 @@ type RenderJob = {
   file?: string;
   error?: string;
 };
-export function startServer(root: string, port: number, host = '127.0.0.1') {
+type AnalysisJob = {
+  status: string;
+  error?: string;
+  controller: AbortController;
+  completion?: Promise<void>;
+};
+export type DashboardServer = http.Server & { abortAnalysis(): Promise<void> };
+export function startServer(root: string, port: number, host = '127.0.0.1'): DashboardServer {
   const renderJobs = new Map<string, RenderJob>();
   let proposalJob: {
     status: 'running' | 'completed' | 'failed';
     error?: string;
   } | null = null;
   let analysisStarting = false;
-  const activeAnalysisJobs = new Map<
-    string,
-    { status: string; error?: string; controller?: AbortController }
-  >();
+  const activeAnalysisJobs = new Map<string, AnalysisJob>();
   const server = http.createServer(async (req, res) => {
     const db = new Store(root);
     try {
@@ -170,9 +174,10 @@ export function startServer(root: string, port: number, host = '127.0.0.1') {
         const jobId = newId();
         analysisStarting = true;
         const controller = new AbortController();
-        activeAnalysisJobs.set(jobId, { status: 'running', controller });
+        const job: AnalysisJob = { status: 'running', controller };
+        activeAnalysisJobs.set(jobId, job);
         const inputDir = path.resolve(root, config.mediaDir);
-        void analyze(
+        job.completion = analyze(
           root,
           inputDir,
           {
@@ -185,8 +190,8 @@ export function startServer(root: string, port: number, host = '127.0.0.1') {
           () => {},
         )
           .then(
-            (result) =>
-              activeAnalysisJobs.set(jobId, {
+            (result) => {
+              Object.assign(job, {
                 status: controller.signal.aborted
                   ? 'cancelled'
                   : result.warnings > 0
@@ -197,17 +202,53 @@ export function startServer(root: string, port: number, host = '127.0.0.1') {
                       error: `${result.warnings} warnings; ${result.failedFiles} failed files`,
                     }
                   : {}),
-              }),
-            (error) =>
-              activeAnalysisJobs.set(jobId, {
+              });
+            },
+            (error) => {
+              Object.assign(job, {
                 status: controller.signal.aborted ? 'cancelled' : 'failed',
                 error: (error as Error).message,
-              }),
+              });
+            },
           )
           .finally(() => {
             analysisStarting = false;
           });
         return send(res, 202, { jobId, status: 'running' });
+      }
+      if (
+        parts[0] === 'api' &&
+        parts[1] === 'analysis' &&
+        parts[2] === 'jobs' &&
+        parts[3] === 'active' &&
+        parts[4] === 'cancel' &&
+        req.method === 'POST'
+      ) {
+        const active = [...activeAnalysisJobs.entries()].find(
+          ([, job]) => job.status === 'running',
+        );
+        if (!active)
+          return send(res, 409, {
+            error: 'No dashboard-owned analysis is active; stop the CLI process in its terminal.',
+          });
+        active[1].controller.abort();
+        return send(res, 202, { jobId: active[0], status: 'cancelling' });
+      }
+      if (
+        parts[0] === 'api' &&
+        parts[1] === 'analysis' &&
+        parts[2] === 'jobs' &&
+        parts[3] === 'active' &&
+        req.method === 'GET'
+      ) {
+        const active = [...activeAnalysisJobs.entries()].find(
+          ([, job]) => job.status === 'running',
+        );
+        return send(
+          res,
+          200,
+          active ? { jobId: active[0], status: active[1].status } : { status: 'idle' },
+        );
       }
       if (
         parts[0] === 'api' &&
@@ -221,8 +262,29 @@ export function startServer(root: string, port: number, host = '127.0.0.1') {
         if (!job) return send(res, 404, { error: 'Analysis job not found' });
         if (job.status !== 'running')
           return send(res, 409, { error: 'Analysis job is not running' });
-        job.controller?.abort();
+        job.controller.abort();
         return send(res, 202, { status: 'cancelling' });
+      }
+      if (
+        parts[0] === 'api' &&
+        parts[1] === 'analysis' &&
+        parts[2] === 'runs' &&
+        parts[3] &&
+        parts[4] === 'cancel' &&
+        req.method === 'POST'
+      ) {
+        const run = db.runs().find((entry: any) => entry.id === parts[3]) as
+          | { id: string; status: string }
+          | undefined;
+        if (!run) return send(res, 404, { error: 'Analysis run not found' });
+        if (run.status !== 'running')
+          return send(res, 409, { error: 'Analysis run is not running' });
+        db.finishRun(
+          run.id,
+          'cancelled',
+          'Marked cancelled after its dashboard process was no longer available.',
+        );
+        return send(res, 200, { status: 'cancelled' });
       }
       if (
         parts[0] === 'api' &&
@@ -890,6 +952,12 @@ export function startServer(root: string, port: number, host = '127.0.0.1') {
       } catch {}
     }
   });
+  const abortAnalysis = async () => {
+    const jobs = [...activeAnalysisJobs.values()];
+    for (const job of jobs) job.controller.abort();
+    await Promise.allSettled(jobs.flatMap((job) => (job.completion ? [job.completion] : [])));
+  };
+  server.on('close', () => void abortAnalysis());
   server.listen(port, host, () => console.log(`Dashboard: http://${host}:${port}`));
-  return server;
+  return Object.assign(server, { abortAnalysis });
 }

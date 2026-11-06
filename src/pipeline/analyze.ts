@@ -102,6 +102,7 @@ export async function analyze(
           try {
             return await task();
           } catch (e) {
+            if ((e as Error).name === 'AbortError') throw e;
             const message = (e as Error).message;
             stageErrors.push({ stage, message, at: new Date().toISOString() });
             event(
@@ -115,7 +116,7 @@ export async function analyze(
           }
         }
         event('probe', `${name}: inspecting media`, id, 'info', name);
-        const meta = await probe(full);
+        const meta = await probe(full, options.signal);
         const reasons: string[] = [];
         if (meta.duration < config.analysis.minDurationSeconds)
           reasons.push(`duration ${meta.duration.toFixed(2)}s below minimum`);
@@ -141,10 +142,11 @@ export async function analyze(
           meta.duration,
           meta.hasAudio,
           config.analysis.minAudioSilenceSeconds,
+          options.signal,
         );
         const audioSignals = await optionalStage(
           'audio-signals',
-          () => inspectAudio(full, meta.hasAudio),
+          () => inspectAudio(full, meta.hasAudio, options.signal),
           { windowSeconds: 0.1, levels: [], events: [] },
         );
         await saveJson(path.join(folder, 'audio-signals.json'), audioSignals);
@@ -158,7 +160,7 @@ export async function analyze(
         const classified = meta.hasAudio
           ? await optionalStage(
               'sound-classifier',
-              () => classifySound(root, config, full, meta.duration, folder),
+              () => classifySound(root, config, full, meta.duration, folder, options.signal),
               [],
             )
           : [];
@@ -172,7 +174,11 @@ export async function analyze(
           name,
         );
         const transcript = meta.hasAudio
-          ? await optionalStage('transcription', () => transcribe(config, full, folder), null)
+          ? await optionalStage(
+              'transcription',
+              () => transcribe(config, full, folder, options.signal),
+              null,
+            )
           : null;
         if (stageErrors.some((x) => x.stage === 'transcription'))
           await rm(path.join(folder, 'transcript.json'), { force: true }).catch(() => {});
@@ -190,6 +196,7 @@ export async function analyze(
           config.analysis.frameIntervalSeconds,
           meta.duration,
           config.analysis.imageMaxWidth ?? 640,
+          options.signal,
         );
         db.upsertClip({
           id,
@@ -325,6 +332,7 @@ export async function analyze(
                 conversation,
                 config,
                 runId,
+                signal: options.signal,
               },
               (message) => event('understanding', `${name}: ${message}`, id, 'info', name),
             );
@@ -364,7 +372,7 @@ export async function analyze(
               throw new Error('Editing provider is disabled');
             event(
               'editing',
-              `${name}: Contextual Editing evaluates ${deepAction.actions.length} complete actions`,
+              `${name}: Contextual Editing evaluates ${deepAction.actions.length} complete actions with ${editingProfile.provider}${editingProfile.model ? ` (${editingProfile.model})` : ''}`,
               id,
               'info',
               name,
@@ -380,11 +388,11 @@ export async function analyze(
               },
               runId,
               signal: options.signal,
-            });
+            }, (message) => event('editing', `${name}: ${message}`, id, 'info', name));
             if ((config.analysis.criticalReviewPasses ?? 0) > 0) {
               event(
                 'critical-review',
-                `${name}: checking proposed cuts (one bounded pass)`,
+                `${name}: checking proposed cuts with ${profileFor(config, 'criticalReview').provider} (one bounded pass)`,
                 id,
                 'info',
                 name,
@@ -402,7 +410,7 @@ export async function analyze(
                       config,
                       runId,
                       signal: options.signal,
-                    })
+                    }, (message) => event('critical-review', `${name}: ${message}`, id, 'info', name))
                   ).decisions,
                 };
               } catch (e) {
@@ -558,6 +566,8 @@ export async function analyze(
             summaries,
             (msg) => event('montage', msg),
             runId,
+            '',
+            options.signal,
           );
         else event('montage', 'No AI highlights available; film proposal skipped', null, 'warn');
       } catch (e) {

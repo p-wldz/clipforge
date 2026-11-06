@@ -98,6 +98,7 @@ export async function suggestFilm(
   onEvent?: (msg: string) => void,
   runId?: string,
   regenerationGuidance = '',
+  signal?: AbortSignal,
 ) {
   if (!items.length) throw new Error('No highlight candidates available for a film proposal');
   const folder = path.join(workspaceDir(root), 'projects', 'suggestions');
@@ -127,6 +128,7 @@ export async function suggestFilm(
       usage = value;
       providerReportedUsd = reported ?? null;
     },
+    signal,
   );
   const config = await import('../core/paths.js').then((m) => m.loadConfig(root));
   const billedModel = provider === 'deepseek' ? model || 'deepseek-flash' : model;

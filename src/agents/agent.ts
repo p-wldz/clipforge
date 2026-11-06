@@ -332,6 +332,20 @@ export async function understandClip(options: {
   }
 }
 
+export function codexTextArgs(model: string | undefined, outputPath: string) {
+  return [
+    'exec',
+    '--json',
+    '--skip-git-repo-check',
+    '--sandbox',
+    'read-only',
+    ...(model ? ['--model', model] : []),
+    '-o',
+    outputPath,
+    '-',
+  ];
+}
+
 /** Shared non-interactive agent path, with prompt over stdin to avoid Windows command-line length limits. */
 export async function runAgentText(
   provider: 'codex' | 'claude' | 'deepseek',
@@ -342,55 +356,58 @@ export async function runAgentText(
   timeoutMs = 120000,
   onUsage?: (usage: TokenUsage | null, providerReportedUsd?: number | null) => void,
   signal?: AbortSignal,
+  onEvent?: (message: string) => void,
 ): Promise<string> {
-  if (provider === 'deepseek') {
-    const result = await deepseekChat(prompt, { model, timeoutMs });
-    onUsage?.(result.usage);
-    await writeFile(outputPath, result.text);
-    return result.text;
-  }
-  if (provider === 'codex') {
-    // Keep the final response parseable even when the prompt contains long clip evidence.
-    // The schema is deliberately permissive; each caller still validates its own contract.
-    const schemaPath = `${outputPath}.schema.json`;
-    await writeFile(schemaPath, JSON.stringify({ type: 'object', additionalProperties: true }));
-    const args = [
-      'exec',
-      '--json',
-      '--skip-git-repo-check',
-      '--sandbox',
-      'read-only',
-      ...(model ? ['--model', model] : []),
-      '--output-schema',
-      schemaPath,
-      '-o',
-      outputPath,
-      '-',
-    ];
-    const output = await run('codex', args, {
+  const started = Date.now();
+  onEvent?.(
+    `${provider}: starting model=${model || 'default'}, prompt=${prompt.length} chars, timeout=${Math.round(timeoutMs / 1000)}s`,
+  );
+  try {
+    if (provider === 'deepseek') {
+      const result = await deepseekChat(prompt, { model, timeoutMs, signal });
+      onUsage?.(result.usage);
+      await writeFile(outputPath, result.text);
+      onEvent?.(`deepseek: completed in ${Date.now() - started}ms; response=${result.text.length} chars`);
+      return result.text;
+    }
+    if (provider === 'codex') {
+      onEvent?.('codex: exec --json, sandbox=read-only, JSON validated by the stage parser');
+      const output = await run('codex', codexTextArgs(model, outputPath), {
+        cwd: workspace,
+        input: prompt,
+        timeoutMs,
+        signal,
+      });
+      onUsage?.(parseCodexUsage(String(output.stdout)));
+      const response = await readFile(outputPath, 'utf8');
+      onEvent?.(
+        `codex: completed in ${Date.now() - started}ms; response=${response.length} chars, trace=${String(output.stdout).length} chars`,
+      );
+      return response;
+    }
+    const args = ['-p', '--output-format', 'json', ...(model ? ['--model', model] : [])];
+    const output = await run('claude', args, {
       cwd: workspace,
       input: prompt,
       timeoutMs,
       signal,
     });
-    onUsage?.(parseCodexUsage(String(output.stdout)));
-    return readFile(outputPath, 'utf8');
-  }
-  const args = ['-p', '--output-format', 'json', ...(model ? ['--model', model] : [])];
-  const output = await run('claude', args, {
-    cwd: workspace,
-    input: prompt,
-    timeoutMs,
-    signal,
-  });
-  const parsed = JSON.parse(String(output.stdout)) as {
-    result?: string;
-    usage?: {
-      input_tokens?: number;
-      cache_read_input_tokens?: number;
-      output_tokens?: number;
+    const parsed = JSON.parse(String(output.stdout)) as {
+      result?: string;
+      usage?: {
+        input_tokens?: number;
+        cache_read_input_tokens?: number;
+        output_tokens?: number;
+      };
     };
-  };
-  onUsage?.(parseClaudeUsage(parsed), parseClaudeReportedCost(parsed));
-  return parsed.result ?? '';
+    const response = parsed.result ?? '';
+    onUsage?.(parseClaudeUsage(parsed), parseClaudeReportedCost(parsed));
+    onEvent?.(`claude: completed in ${Date.now() - started}ms; response=${response.length} chars`);
+    return response;
+  } catch (error) {
+    if ((error as Error).name === 'AbortError') throw error;
+    throw new Error(
+      `${provider} request failed after ${Date.now() - started}ms (model=${model || 'default'}, prompt=${prompt.length} chars): ${(error as Error).message}`,
+    );
+  }
 }

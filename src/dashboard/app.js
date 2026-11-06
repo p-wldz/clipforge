@@ -5,7 +5,7 @@ const $ = (q) => document.querySelector(q),
 const stopAnalysis = document.createElement('button');
 stopAnalysis.id = 'stop-analysis';
 stopAnalysis.className = 'button-secondary danger-button';
-stopAnalysis.hidden = true;
+stopAnalysis.disabled = true;
 stopAnalysis.textContent = 'Stop analysis';
 $('#start-analysis').after(stopAnalysis);
 const safe = (s) =>
@@ -910,6 +910,10 @@ async function pollRuns() {
           )
           .join('') || 'No AI calls recorded';
     }
+    if (!uiJob) {
+      const active = await api('/api/analysis/jobs/active');
+      if (active.status === 'running') uiJob = active.jobId;
+    }
     const running = latest?.status === 'running' || Boolean(uiJob);
     const banner = $('#global-run-banner');
     banner.hidden = !running;
@@ -922,7 +926,7 @@ async function pollRuns() {
         : '5%';
     }
     $('#start-analysis').disabled = running;
-    $('#stop-analysis').hidden = !uiJob;
+    $('#stop-analysis').disabled = !(uiJob || latest?.status === 'running');
     if (lastRun && latest?.id === lastRun && latest.status !== 'running') {
       await reload();
       lastRun = '';
@@ -957,10 +961,32 @@ $('#start-analysis').onclick = async () => {
   }
 };
 $('#stop-analysis').onclick = async () => {
-  if (!uiJob) return;
   busy($('#stop-analysis'), true, 'Stopping...');
   try {
-    await send('/api/analysis/jobs/' + encodeURIComponent(uiJob) + '/cancel', 'POST');
+    const latest = analysisRuns[0];
+    if (!uiJob && latest?.status === 'running') {
+      const active = await api('/api/analysis/jobs/active');
+      if (active.status === 'running') uiJob = active.jobId;
+    }
+    if (!uiJob && latest?.status === 'running') {
+      if (
+        !confirm(
+          'The dashboard that started this run is no longer available. Clear its stuck record? This cannot stop a separately run CLI analysis.',
+        )
+      )
+        return;
+      await send('/api/analysis/runs/' + encodeURIComponent(latest.id) + '/cancel', 'POST');
+      $('#analysis-job-status').textContent = 'Abandoned analysis record cleared.';
+      await pollRuns();
+      return;
+    }
+    const result = await send(
+      uiJob
+        ? '/api/analysis/jobs/' + encodeURIComponent(uiJob) + '/cancel'
+        : '/api/analysis/jobs/active/cancel',
+      'POST',
+    );
+    if (result.jobId) uiJob = result.jobId;
     $('#analysis-job-status').textContent = 'Stopping analysis...';
   } catch (e) {
     notify(e.message);
@@ -1168,10 +1194,7 @@ $('#refresh-diagnostics').onclick = async () => {
   }
 };
 async function init() {
-  await reload();
-  await loadSettings();
-  await pollRuns();
-  await pollSuggestionJob();
+  await Promise.all([reload(), loadSettings(), pollRuns(), pollSuggestionJob()]);
   const hash = location.hash.slice(1);
   navigate(['home', 'library', 'studio', 'adapters', 'settings'].includes(hash) ? hash : 'home');
   setInterval(() => {

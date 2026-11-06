@@ -25,6 +25,8 @@ Highlight `status`: `pending_review | approved | rejected`. `origin`: `heuristic
 - `GET /media/:clipId` with byte-range support; original media, local server only
 - `GET /thumbnail/:clipId`
 - `POST /api/analysis/jobs/:jobId/cancel` cooperatively cancels a dashboard analysis. In-flight agent subprocesses are terminated; local stages stop before the next clip.
+- `POST /api/analysis/jobs/active/cancel` cancels the dashboard's active analysis without requiring a browser-held job ID. It never claims to stop a separately run CLI process.
+- `POST /api/analysis/runs/:runId/cancel` explicitly clears an abandoned `running` record after its dashboard process has exited. It never terminates a separately run CLI process.
 
 ## Highlight deletion
 

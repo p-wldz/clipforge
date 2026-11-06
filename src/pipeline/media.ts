@@ -7,16 +7,12 @@ export interface Metadata {
   height: number;
   hasAudio: boolean;
 }
-export async function probe(file: string): Promise<Metadata> {
-  const { stdout } = await run('ffprobe', [
-    '-v',
-    'error',
-    '-show_format',
-    '-show_streams',
-    '-of',
-    'json',
-    file,
-  ]);
+export async function probe(file: string, signal?: AbortSignal): Promise<Metadata> {
+  const { stdout } = await run(
+    'ffprobe',
+    ['-v', 'error', '-show_format', '-show_streams', '-of', 'json', file],
+    { signal },
+  );
   const raw = JSON.parse(String(stdout)) as {
     format: { duration: string };
     streams: Array<{ codec_type: string; width?: number; height?: number }>;
@@ -36,6 +32,7 @@ export async function frames(
   interval: number,
   duration: number,
   maxWidth = 640,
+  signal?: AbortSignal,
 ) {
   await mkdir(targetDir, { recursive: true });
   const count = Math.min(30, Math.ceil(duration / interval));
@@ -65,7 +62,7 @@ export async function frames(
           '5',
           output,
         ],
-        { timeoutMs: 60000 },
+        { timeoutMs: 60000, signal },
       );
     }
     results.push(output);
@@ -77,6 +74,7 @@ export async function audioEvents(
   duration: number,
   hasAudio: boolean,
   minSilence: number,
+  signal?: AbortSignal,
 ) {
   if (!hasAudio) return [{ start: 0, end: duration }];
   try {
@@ -92,7 +90,7 @@ export async function audioEvents(
         'null',
         '-',
       ],
-      { timeoutMs: 120000 },
+      { timeoutMs: 120000, signal },
     );
     const re = /silence_(start|end):\s*([0-9.]+)/g;
     const silences: { start: number; end: number }[] = [];
@@ -114,7 +112,8 @@ export async function audioEvents(
     }
     if (duration - cursor > 0.5) active.push({ start: cursor, end: duration });
     return active.length ? active : [{ start: 0, end: duration }];
-  } catch {
+  } catch (error) {
+    if ((error as Error).name === 'AbortError') throw error;
     return [{ start: 0, end: duration }];
   }
 }

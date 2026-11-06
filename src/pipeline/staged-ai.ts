@@ -348,6 +348,7 @@ export async function conversationUnderstanding(
       10 * 60 * 1000,
       saveUsage(db, input, 'conversation-understanding', profile.provider, profile.model),
       input.signal,
+      onEvent,
     );
     const conversation = parseConversationUnderstanding(
       response,
@@ -540,6 +541,7 @@ export async function baseUnderstanding(
       10 * 60 * 1000,
       saveUsage(db, input, 'deep-action', profile.provider, profile.model, input.images.length),
       input.signal,
+      onEvent,
     );
     const understanding = {
       ...parseDeepAction(response, input.duration, input.clipId),
@@ -663,6 +665,7 @@ export async function contextualEditing(
     runId?: string;
     signal?: AbortSignal;
   },
+  onEvent?: (message: string) => void,
 ) {
   const profile = profileFor(input.config, 'editing');
   if (!['codex', 'claude', 'deepseek'].includes(profile.provider))
@@ -698,6 +701,7 @@ export async function contextualEditing(
       10 * 60 * 1000,
       saveUsage(db, input, 'contextual-editing', profile.provider, profile.model),
       input.signal,
+      onEvent,
     );
     const decisions = parseContextualEditing(
       response,
@@ -746,6 +750,7 @@ export async function criticalReview(
     runId?: string;
     signal?: AbortSignal;
   },
+  onEvent?: (message: string) => void,
 ) {
   const profile = profileFor(input.config, 'criticalReview');
   if (!['codex', 'claude', 'deepseek'].includes(profile.provider))
@@ -781,6 +786,7 @@ export async function criticalReview(
       10 * 60 * 1000,
       saveUsage(db, input, 'critical-review', profile.provider, profile.model),
       input.signal,
+      onEvent,
     );
     const raw = json(response);
     const byId = new Map(input.decisions.map((d) => [d.actionId, d]));

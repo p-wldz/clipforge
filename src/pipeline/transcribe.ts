@@ -3,7 +3,12 @@ import { readFile } from 'node:fs/promises';
 import { run } from '../core/process.js';
 import { fileURLToPath } from 'node:url';
 import type { Config } from '../core/paths.js';
-export async function transcribe(config: Config, file: string, artifact: string) {
+export async function transcribe(
+  config: Config,
+  file: string,
+  artifact: string,
+  signal?: AbortSignal,
+) {
   if (!config.transcription.enabled) return null;
   // An external executable is explicitly configured; never evaluate a shell string.
   if (config.transcription.provider === 'faster-whisper') {
@@ -24,14 +29,14 @@ export async function transcribe(config: Config, file: string, artifact: string)
         '--device',
         config.transcription.device ?? 'cpu',
       ],
-      { timeoutMs: 30 * 60 * 1000 },
+      { timeoutMs: 30 * 60 * 1000, signal },
     );
     return JSON.parse(await readFile(output, 'utf8')) as unknown;
   }
   const args = config.transcription.args.map((s) =>
     s.replaceAll('{input}', file).replaceAll('{outputDir}', artifact),
   );
-  await run(config.transcription.command, args, { timeoutMs: 30 * 60 * 1000 });
+  await run(config.transcription.command, args, { timeoutMs: 30 * 60 * 1000, signal });
   const json = path.join(artifact, path.parse(file).name + '.json');
   try {
     return JSON.parse(await readFile(json, 'utf8')) as unknown;

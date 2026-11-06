@@ -31,7 +31,7 @@ export function parseDeepseekUsage(raw: unknown): TokenUsage | null {
 }
 export async function deepseekChat(
   prompt: string,
-  opts: { model?: string; images?: string[]; timeoutMs?: number } = {},
+  opts: { model?: string; images?: string[]; timeoutMs?: number; signal?: AbortSignal } = {},
 ): Promise<{
   text: string;
   usage: TokenUsage | null;
@@ -75,7 +75,9 @@ export async function deepseekChat(
       stream: false,
       thinking: { type: 'disabled' },
     }),
-    signal: AbortSignal.timeout(opts.timeoutMs ?? 180000),
+    signal: opts.signal
+      ? AbortSignal.any([opts.signal, AbortSignal.timeout(opts.timeoutMs ?? 180000)])
+      : AbortSignal.timeout(opts.timeoutMs ?? 180000),
   });
   const raw = await response.text();
   if (!response.ok) throw new Error(`DeepSeek API HTTP ${response.status}: ${raw.slice(0, 500)}`);

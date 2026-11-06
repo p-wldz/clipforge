@@ -43,6 +43,7 @@ export async function classifySound(
   file: string,
   duration: number,
   artifact: string,
+  signal?: AbortSignal,
 ): Promise<ClassifiedSound[]> {
   if (!config.soundClassifier.enabled) return [];
   await mkdir(artifact, { recursive: true });
@@ -65,7 +66,7 @@ export async function classifySound(
         'pcm_s16le',
         wav,
       ],
-      { timeoutMs: 120000 },
+      { timeoutMs: 120000, signal },
     );
     const cfg = config.soundClassifier;
     const { stdout } = await run(
@@ -85,7 +86,7 @@ export async function classifySound(
         '--max-events',
         String(cfg.maxEvents),
       ],
-      { timeoutMs: 30 * 60 * 1000, maxBuffer: 8 * 1024 * 1024 },
+      { timeoutMs: 30 * 60 * 1000, maxBuffer: 8 * 1024 * 1024, signal },
     );
     const events = validateSoundEvents(JSON.parse(String(stdout)), duration);
     await saveJson(path.join(artifact, 'sound-events.json'), events);

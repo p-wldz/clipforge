@@ -14,12 +14,16 @@ export interface AudioSignals {
   events: SoundEvent[];
 }
 /** Deterministic signal analysis. These are NOT semantic explosion/gunshot labels. */
-export async function inspectAudio(file: string, hasAudio: boolean): Promise<AudioSignals> {
+export async function inspectAudio(
+  file: string,
+  hasAudio: boolean,
+  signal?: AbortSignal,
+): Promise<AudioSignals> {
   if (!hasAudio) return { windowSeconds: 0.1, levels: [], events: [] };
   const { stdout } = await run(
     'ffmpeg',
     ['-v', 'error', '-i', file, '-vn', '-ac', '1', '-ar', '16000', '-f', 's16le', 'pipe:1'],
-    { timeoutMs: 120000, maxBuffer: 48 * 1024 * 1024, encoding: 'buffer' },
+    { timeoutMs: 120000, maxBuffer: 48 * 1024 * 1024, encoding: 'buffer', signal },
   );
   const buffer = stdout as Buffer;
   const sampleCount = Math.floor(buffer.length / 2),

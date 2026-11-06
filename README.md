@@ -95,6 +95,8 @@ Changing an editing or film-direction context does not invalidate media analysis
 
 ## CLI reference
 
+See [docs/CLI.md](docs/CLI.md) for terminal-first workflows, examples, and safety notes.
+
 Every command accepts `--root <workspace-path>` before the command. Without it, Clipforge uses the current directory.
 
 | Command | Description | Options |
