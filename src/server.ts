@@ -67,7 +67,10 @@ export function startServer(root: string, port: number, host = '127.0.0.1') {
     error?: string;
   } | null = null;
   let analysisStarting = false;
-  const activeAnalysisJobs = new Map<string, { status: string; error?: string }>();
+  const activeAnalysisJobs = new Map<
+    string,
+    { status: string; error?: string; controller?: AbortController }
+  >();
   const server = http.createServer(async (req, res) => {
     const db = new Store(root);
     try {
@@ -166,7 +169,8 @@ export function startServer(root: string, port: number, host = '127.0.0.1') {
         if (typeof input.force !== 'boolean') throw new Error('force must be a boolean');
         const jobId = newId();
         analysisStarting = true;
-        activeAnalysisJobs.set(jobId, { status: 'running' });
+        const controller = new AbortController();
+        activeAnalysisJobs.set(jobId, { status: 'running', controller });
         const inputDir = path.resolve(root, config.mediaDir);
         void analyze(
           root,
@@ -176,13 +180,18 @@ export function startServer(root: string, port: number, host = '127.0.0.1') {
             provider:
               provider === 'none' ? undefined : (provider as 'codex' | 'claude' | 'deepseek'),
             force: input.force,
+            signal: controller.signal,
           },
           () => {},
         )
           .then(
             (result) =>
               activeAnalysisJobs.set(jobId, {
-                status: result.warnings > 0 ? 'completed_with_warnings' : 'completed',
+                status: controller.signal.aborted
+                  ? 'cancelled'
+                  : result.warnings > 0
+                    ? 'completed_with_warnings'
+                    : 'completed',
                 ...(result.warnings > 0
                   ? {
                       error: `${result.warnings} warnings; ${result.failedFiles} failed files`,
@@ -191,7 +200,7 @@ export function startServer(root: string, port: number, host = '127.0.0.1') {
               }),
             (error) =>
               activeAnalysisJobs.set(jobId, {
-                status: 'failed',
+                status: controller.signal.aborted ? 'cancelled' : 'failed',
                 error: (error as Error).message,
               }),
           )
@@ -199,6 +208,21 @@ export function startServer(root: string, port: number, host = '127.0.0.1') {
             analysisStarting = false;
           });
         return send(res, 202, { jobId, status: 'running' });
+      }
+      if (
+        parts[0] === 'api' &&
+        parts[1] === 'analysis' &&
+        parts[2] === 'jobs' &&
+        parts[3] &&
+        parts[4] === 'cancel' &&
+        req.method === 'POST'
+      ) {
+        const job = activeAnalysisJobs.get(parts[3]);
+        if (!job) return send(res, 404, { error: 'Analysis job not found' });
+        if (job.status !== 'running')
+          return send(res, 409, { error: 'Analysis job is not running' });
+        job.controller?.abort();
+        return send(res, 202, { status: 'cancelling' });
       }
       if (
         parts[0] === 'api' &&

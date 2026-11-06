@@ -27,6 +27,7 @@ export async function analyze(
     withAgent: boolean;
     force: boolean;
     provider?: 'codex' | 'claude' | 'cursor' | 'deepseek';
+    signal?: AbortSignal;
   },
   onProgress: (line: string) => void = console.log,
 ) {
@@ -45,6 +46,12 @@ export async function analyze(
   let processed = 0,
     analyzed = 0,
     failedFiles = 0;
+  const throwIfCancelled = () => {
+    if (!options.signal?.aborted) return;
+    const error = new Error('Analysis cancelled');
+    error.name = 'AbortError';
+    throw error;
+  };
   try {
     const stat = await import('node:fs/promises').then((fs) => fs.stat(input));
     const files = stat.isDirectory()
@@ -70,6 +77,7 @@ export async function analyze(
     }
 
     for (const file of files) {
+      throwIfCancelled();
       const full = path.resolve(file),
         id = stableId(full),
         folder = artifactDir(root, id),
@@ -218,6 +226,7 @@ export async function analyze(
           config.analysis.maxHighlightsPerClip,
           config.analysis.highlightDurationSeconds,
         );
+        throwIfCancelled();
         if (provider !== 'none') {
           // This objective artifact is intentionally produced before contextual editing.
           // Its cache key excludes the project creative brief, so it survives a new film idea.
@@ -277,6 +286,8 @@ export async function analyze(
                     })),
                   ],
                   config,
+                  runId,
+                  signal: options.signal,
                 },
                 (message) =>
                   event('conversation-understanding', `${name}: ${message}`, id, 'info', name),
@@ -367,6 +378,8 @@ export async function analyze(
                 ...config,
                 aiStages: { ...config.aiStages, editing: editingProfile },
               },
+              runId,
+              signal: options.signal,
             });
             if ((config.analysis.criticalReviewPasses ?? 0) > 0) {
               event(
@@ -387,6 +400,8 @@ export async function analyze(
                       context: scopedContexts.editing || context,
                       decisions: result.decisions,
                       config,
+                      runId,
+                      signal: options.signal,
                     })
                   ).decisions,
                 };
@@ -487,6 +502,7 @@ export async function analyze(
           );
           event('llm', `${name}: SKIPPED (no --agent flag)`, id, 'warn', name);
         }
+        throwIfCancelled();
         if (stageErrors.length) await saveJson(path.join(folder, 'stage-errors.json'), stageErrors);
         else
           await rm(path.join(folder, 'stage-errors.json'), {
@@ -504,6 +520,7 @@ export async function analyze(
           id,
         );
       } catch (e) {
+        if ((e as Error).name === 'AbortError') throw e;
         failedFiles++;
         const message = (e as Error).message;
         db.recordFileFailure(runId, id, full, message);
@@ -563,7 +580,11 @@ export async function analyze(
       usage,
     };
   } catch (error) {
-    db.finishRun(runId, 'failed', (error as Error).message);
+    db.finishRun(
+      runId,
+      (error as Error).name === 'AbortError' ? 'cancelled' : 'failed',
+      (error as Error).message,
+    );
     throw error;
   } finally {
     db.close();

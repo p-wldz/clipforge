@@ -1,5 +1,13 @@
+import { stopAtBoundary } from './playback.js';
+
 const $ = (q) => document.querySelector(q),
   $$ = (q) => [...document.querySelectorAll(q)];
+const stopAnalysis = document.createElement('button');
+stopAnalysis.id = 'stop-analysis';
+stopAnalysis.className = 'button-secondary danger-button';
+stopAnalysis.hidden = true;
+stopAnalysis.textContent = 'Stop analysis';
+$('#start-analysis').after(stopAnalysis);
 const safe = (s) =>
   // Dashboard cards are built from stored, user- and agent-provided strings.
   // Escape them before inserting HTML rather than trusting stored content.
@@ -338,6 +346,9 @@ async function showHighlight(id) {
   const v = $('#review-player');
   v.addEventListener('loadedmetadata', () => {
     v.currentTime = h.start;
+  });
+  v.addEventListener('timeupdate', () => {
+    stopAtBoundary(v, Number($('#review-end').value));
   });
   const conversationBox = $('#clip-conversations');
   const editorialBox = $('#clip-editorial');
@@ -911,6 +922,7 @@ async function pollRuns() {
         : '5%';
     }
     $('#start-analysis').disabled = running;
+    $('#stop-analysis').hidden = !uiJob;
     if (lastRun && latest?.id === lastRun && latest.status !== 'running') {
       await reload();
       lastRun = '';
@@ -944,6 +956,18 @@ $('#start-analysis').onclick = async () => {
     notify(e.message);
   }
 };
+$('#stop-analysis').onclick = async () => {
+  if (!uiJob) return;
+  busy($('#stop-analysis'), true, 'Stopping...');
+  try {
+    await send('/api/analysis/jobs/' + encodeURIComponent(uiJob) + '/cancel', 'POST');
+    $('#analysis-job-status').textContent = 'Stopping analysis...';
+  } catch (e) {
+    notify(e.message);
+  } finally {
+    busy($('#stop-analysis'), false);
+  }
+};
 async function pollUiJob() {
   if (!uiJob) return;
   try {
@@ -952,11 +976,13 @@ async function pollUiJob() {
       uiJob = null;
       busy($('#start-analysis'), false);
       $('#analysis-job-status').textContent =
-        result.status === 'completed'
-          ? 'Analysis complete'
-          : result.status === 'completed_with_warnings'
-            ? `Analysis finished with warnings: ${result.error}`
-            : `Analysis failed: ${result.error}`;
+        result.status === 'cancelled'
+          ? 'Analysis stopped'
+          : result.status === 'completed'
+            ? 'Analysis complete'
+            : result.status === 'completed_with_warnings'
+              ? `Analysis finished with warnings: ${result.error}`
+              : `Analysis failed: ${result.error}`;
       await reload();
     }
   } catch (e) {

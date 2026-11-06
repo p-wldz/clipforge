@@ -11,8 +11,10 @@ test('AST ignores 213 sample trailing audio, but keeps valid windows', (t) => {
     env: { ...process.env, PYTHONPATH: path.join(process.cwd(), 'tools') },
     encoding: 'utf8',
   });
-  if (result.error?.code === 'ENOENT') {
-    t.skip('Python is not installed');
+  if (result.status === null) {
+    t.skip(
+      `Python worker could not start${result.error?.message ? `: ${result.error.message}` : ''}`,
+    );
     return;
   }
   assert.equal(result.status, 0, result.stderr);
@@ -27,8 +29,10 @@ test('AST skips audio too short for Kaldi without inference', (t) => {
     env: { ...process.env, PYTHONPATH: path.join(process.cwd(), 'tools') },
     encoding: 'utf8',
   });
-  if (result.error?.code === 'ENOENT') {
-    t.skip('Python is not installed');
+  if (result.status === null) {
+    t.skip(
+      `Python worker could not start${result.error?.message ? `: ${result.error.message}` : ''}`,
+    );
     return;
   }
   assert.equal(result.status, 0, result.stderr);

@@ -24,6 +24,7 @@ Highlight `status`: `pending_review | approved | rejected`. `origin`: `heuristic
 - `POST /api/projects/:id/render`
 - `GET /media/:clipId` with byte-range support; original media, local server only
 - `GET /thumbnail/:clipId`
+- `POST /api/analysis/jobs/:jobId/cancel` cooperatively cancels a dashboard analysis. In-flight agent subprocesses are terminated; local stages stop before the next clip.
 
 ## Highlight deletion
 

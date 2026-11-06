@@ -10,9 +10,16 @@ export async function run(
     maxBuffer?: number;
     onStdout?: (text: string) => void;
     onStderr?: (text: string) => void;
+    signal?: AbortSignal;
   } = {},
 ) {
   return new Promise<{ stdout: string | Buffer; stderr: string }>((resolve, reject) => {
+    if (opts.signal?.aborted) {
+      const error = new Error('Process cancelled');
+      error.name = 'AbortError';
+      reject(error);
+      return;
+    }
     const child = spawn(command, args, {
       cwd: opts.cwd,
       windowsHide: true,
@@ -22,7 +29,13 @@ export async function run(
     let bytes = 0;
     let stdout = '',
       stderr = '';
+    let cancelled = false;
     const timer = setTimeout(() => child.kill(), opts.timeoutMs ?? 120000);
+    const cancel = () => {
+      cancelled = true;
+      child.kill();
+    };
+    opts.signal?.addEventListener('abort', cancel, { once: true });
     child.stdout.on('data', (b: Buffer) => {
       opts.onStdout?.(b.toString());
       bytes += b.length;
@@ -37,16 +50,27 @@ export async function run(
     });
     child.on('error', (e) => {
       clearTimeout(timer);
+      opts.signal?.removeEventListener('abort', cancel);
       reject(e);
     });
     child.on('close', (code, signal) => {
       clearTimeout(timer);
+      opts.signal?.removeEventListener('abort', cancel);
+      if (cancelled) {
+        const error = new Error('Process cancelled');
+        error.name = 'AbortError';
+        reject(error);
+        return;
+      }
       if (code === 0)
         resolve({
           stdout: opts.encoding === 'buffer' ? Buffer.concat(chunks) : stdout,
           stderr,
         });
-      else reject(new Error(`${command} failed (${code ?? signal}): ${stderr.slice(-2500)}`));
+      else {
+        const detail = stderr || stdout;
+        reject(new Error(`${command} failed (${code ?? signal}): ${detail.slice(-2500)}`));
+      }
     });
     if (opts.input !== undefined) child.stdin.end(opts.input);
     else child.stdin.end();

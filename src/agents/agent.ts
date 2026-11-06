@@ -341,6 +341,7 @@ export async function runAgentText(
   outputPath: string,
   timeoutMs = 120000,
   onUsage?: (usage: TokenUsage | null, providerReportedUsd?: number | null) => void,
+  signal?: AbortSignal,
 ): Promise<string> {
   if (provider === 'deepseek') {
     const result = await deepseekChat(prompt, { model, timeoutMs });
@@ -349,6 +350,10 @@ export async function runAgentText(
     return result.text;
   }
   if (provider === 'codex') {
+    // Keep the final response parseable even when the prompt contains long clip evidence.
+    // The schema is deliberately permissive; each caller still validates its own contract.
+    const schemaPath = `${outputPath}.schema.json`;
+    await writeFile(schemaPath, JSON.stringify({ type: 'object', additionalProperties: true }));
     const args = [
       'exec',
       '--json',
@@ -356,6 +361,8 @@ export async function runAgentText(
       '--sandbox',
       'read-only',
       ...(model ? ['--model', model] : []),
+      '--output-schema',
+      schemaPath,
       '-o',
       outputPath,
       '-',
@@ -364,6 +371,7 @@ export async function runAgentText(
       cwd: workspace,
       input: prompt,
       timeoutMs,
+      signal,
     });
     onUsage?.(parseCodexUsage(String(output.stdout)));
     return readFile(outputPath, 'utf8');
@@ -373,6 +381,7 @@ export async function runAgentText(
     cwd: workspace,
     input: prompt,
     timeoutMs,
+    signal,
   });
   const parsed = JSON.parse(String(output.stdout)) as {
     result?: string;

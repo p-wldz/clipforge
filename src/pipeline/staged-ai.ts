@@ -13,6 +13,7 @@ import {
 import { Store, type Highlight } from '../core/db.js';
 import { getPrompt } from '../agents/prompts.js';
 import { runAgentText } from '../agents/agent.js';
+import { estimateApiEquivalent, type TokenUsage } from '../core/usage.js';
 
 export type ActionPhase = { start: number; end: number; description: string };
 export type ConversationPhase = {
@@ -134,6 +135,30 @@ function json(text: string) {
     last = text.lastIndexOf('}');
   if (first < 0 || last <= first) throw new Error('Response contains no JSON object');
   return JSON.parse(text.slice(first, last + 1)) as Record<string, unknown>;
+}
+function saveUsage(
+  db: Store,
+  input: { runId?: string; clipId: string; config: Config },
+  stage: string,
+  provider: string,
+  model: string | undefined,
+  imageCount = 0,
+) {
+  return (usage: TokenUsage | null, providerReportedUsd?: number | null) => {
+    const estimate = estimateApiEquivalent(provider, model, usage, input.config.pricing);
+    db.saveAiUsage({
+      runId: input.runId,
+      clipId: input.clipId,
+      stage,
+      provider,
+      model,
+      usage,
+      imageCount,
+      apiEquivalentUsd: estimate.usd,
+      providerReportedUsd,
+      costStatus: estimate.status,
+    });
+  };
 }
 const bounded = (value: unknown, duration: number) =>
   typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= duration + 0.1;
@@ -287,6 +312,8 @@ export async function conversationUnderstanding(
     transcript: Array<{ id: string; start: number; end: number; text: string }>;
     events: Array<{ id: string; start: number; end: number; kind: string; detail: string }>;
     config: Config;
+    runId?: string;
+    signal?: AbortSignal;
   },
   onEvent?: (message: string) => void,
 ) {
@@ -319,6 +346,8 @@ export async function conversationUnderstanding(
       request,
       output,
       10 * 60 * 1000,
+      saveUsage(db, input, 'conversation-understanding', profile.provider, profile.model),
+      input.signal,
     );
     const conversation = parseConversationUnderstanding(
       response,
@@ -471,6 +500,7 @@ export async function baseUnderstanding(
     conversation?: ConversationArtifact;
     config: Config;
     runId?: string;
+    signal?: AbortSignal;
   },
   onEvent?: (message: string) => void,
 ) {
@@ -508,6 +538,8 @@ export async function baseUnderstanding(
       request,
       output,
       10 * 60 * 1000,
+      saveUsage(db, input, 'deep-action', profile.provider, profile.model, input.images.length),
+      input.signal,
     );
     const understanding = {
       ...parseDeepAction(response, input.duration, input.clipId),
@@ -628,6 +660,8 @@ export async function contextualEditing(
     understanding: Understanding;
     context: string;
     config: Config;
+    runId?: string;
+    signal?: AbortSignal;
   },
 ) {
   const profile = profileFor(input.config, 'editing');
@@ -662,6 +696,8 @@ export async function contextualEditing(
       request,
       output,
       10 * 60 * 1000,
+      saveUsage(db, input, 'contextual-editing', profile.provider, profile.model),
+      input.signal,
     );
     const decisions = parseContextualEditing(
       response,
@@ -707,6 +743,8 @@ export async function criticalReview(
     context: string;
     decisions: EditingDecision[];
     config: Config;
+    runId?: string;
+    signal?: AbortSignal;
   },
 ) {
   const profile = profileFor(input.config, 'criticalReview');
@@ -741,6 +779,8 @@ export async function criticalReview(
       request,
       output,
       10 * 60 * 1000,
+      saveUsage(db, input, 'critical-review', profile.provider, profile.model),
+      input.signal,
     );
     const raw = json(response);
     const byId = new Map(input.decisions.map((d) => [d.actionId, d]));
@@ -818,6 +858,8 @@ export async function contextualUnderstanding(
     base: Understanding;
     domain: string;
     config: Config;
+    runId?: string;
+    signal?: AbortSignal;
   },
 ) {
   const profile = profileFor(input.config, 'contextualUnderstanding');
@@ -846,6 +888,8 @@ export async function contextualUnderstanding(
       request,
       output,
       10 * 60 * 1000,
+      saveUsage(db, input, 'contextual-understanding', profile.provider, profile.model),
+      input.signal,
     );
     const value = JSON.parse(response.slice(response.indexOf('{'), response.lastIndexOf('}') + 1));
     await writeFile(file, JSON.stringify(value, null, 2));

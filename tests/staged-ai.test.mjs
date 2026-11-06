@@ -153,3 +153,38 @@ test('deep action analysis preserves complete actions and contextual editing dec
     /every Deep Action/,
   );
 });
+test('forced re-analysis removes saved derived-set references before pending highlights', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'clipforge-force-'));
+  try {
+    await initWorkspace(root);
+    const db = new Store(root);
+    db.upsertClip({
+      id: 'c1',
+      source_path: 'one.mp4',
+      duration: 30,
+      width: 1,
+      height: 1,
+      analyzed_at: new Date().toISOString(),
+      transcript: null,
+    });
+    const highlight = {
+      id: 'h1',
+      clip_id: 'c1',
+      start: 0,
+      end: 10,
+      title: 'Pending',
+      description: '',
+      score: 50,
+      status: 'pending_review',
+      origin: 'heuristic',
+      created_at: new Date().toISOString(),
+    };
+    db.saveHighlightSet('context', 'key', [highlight]);
+    db.clearPendingHighlights('c1');
+    assert.equal(db.highlight('h1'), undefined);
+    assert.equal(db.highlightSets().length, 0);
+    db.close();
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});

@@ -51,6 +51,6 @@ Run history and stage events are stored in `.clipforge/state.sqlite`, shared bet
 
 ### v0.11 Studio and project-level cuts
 
-The `project_items` table contains ordered highlight references plus optional editor-specific start/end overrides. Browser preview reads those fields and plays `/media/:clipId` sequentially with client-side seeks. The server accepts explicit montage create/update operations through `/api/editor/projects`. The renderer reads `Store.projectItems` and uses the cut override values. No source media is modified.
+The `project_items` table contains ordered highlight references plus optional editor-specific start/end overrides. Browser preview reads those fields and plays `/media/:clipId` sequentially with client-side seeks. Highlight review playback also stops at the currently selected end boundary. The server accepts explicit montage create/update operations through `/api/editor/projects`. The renderer reads `Store.projectItems` and uses the cut override values. No source media is modified.
 
 There are two install axes: the Node CLI can be global or project-local (npm standard installation); model execution environments can be project-local or shared-user (`clipforge setup --scope project|user`). Project contexts, prompt templates, SQLite and review assets **always** stay local to the clips workspace.

@@ -355,7 +355,7 @@ export class Store {
   }
   finishRun(
     id: string,
-    status: 'completed' | 'completed_with_warnings' | 'failed',
+    status: 'completed' | 'completed_with_warnings' | 'failed' | 'cancelled',
     error?: string,
   ) {
     this.db
@@ -748,9 +748,26 @@ export class Store {
     return this.db.prepare('SELECT * FROM clips ORDER BY analyzed_at DESC').all() as Clip[];
   }
   clearPendingHighlights(clipId: string) {
-    this.db
-      .prepare("DELETE FROM highlights WHERE clip_id=? AND status='pending_review'")
-      .run(clipId);
+    this.db.exec('BEGIN');
+    try {
+      // Saved editing sets reference generated highlights. Remove those derived references
+      // before replacing pending candidates during a forced re-analysis.
+      this.db
+        .prepare(
+          "DELETE FROM highlight_set_items WHERE highlight_id IN (SELECT id FROM highlights WHERE clip_id=? AND status='pending_review')",
+        )
+        .run(clipId);
+      this.db
+        .prepare("DELETE FROM highlights WHERE clip_id=? AND status='pending_review'")
+        .run(clipId);
+      this.db.exec(
+        'DELETE FROM highlight_sets WHERE NOT EXISTS (SELECT 1 FROM highlight_set_items WHERE highlight_set_items.context_key=highlight_sets.context_key AND highlight_set_items.cache_key=highlight_sets.cache_key)',
+      );
+      this.db.exec('COMMIT');
+    } catch (error) {
+      this.db.exec('ROLLBACK');
+      throw error;
+    }
   }
   /** Remove derived review items only; clips, artifacts, and projects remain intact. */
   deleteHighlights(ids?: string[]) {
