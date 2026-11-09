@@ -174,7 +174,7 @@ Prompt names include:
 - `editing-boundary-refinement` → `prompts/editing/boundary-refinement.md`
 - `clip-analysis`, `highlight-selection`, `montage`, `film-direction`, `film-regeneration`, and `agent-test`
 
-The dashboard exposes prompt editing, provider settings, run progress, highlight review, and Film Studio. All dashboard requests stay local.
+The dashboard labels each prompt by its job and describes the guardrail it controls before showing the raw editable text. Prompt files remain advanced project instructions: they guide optional AI calls, but schema validation and human approval remain enforced in code. All dashboard requests stay local.
 
 ## Optional local enrichment
 

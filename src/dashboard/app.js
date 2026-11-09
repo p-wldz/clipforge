@@ -1163,12 +1163,29 @@ $('#agent-test-button').onclick = async () => {
     busy($('#agent-test-button'), false);
   }
 };
+const promptMeta = {
+  'conversation-understanding': ['Conversation context', 'Groups timestamped transcript lines without rewriting what was said.'],
+  'deep-action-analysis': ['Complete action evidence', 'Maps setup, action, outcome, and reaction before any creative selection.'],
+  'contextual-editing': ['Highlight selection', 'Selects complete actions that fit the project brief; it can select none.'],
+  'critical-review': ['Boundary review', 'Checks proposed cuts against saved evidence; it cannot invent a new moment.'],
+  'understanding-base': ['Objective observation', 'Describes source evidence before domain or creative preferences are applied.'],
+  'understanding-contextual': ['Domain interpretation', 'Adds game/domain meaning while retaining the original observations.'],
+  'editing-boundary-refinement': ['Narrative safeguard', 'Keeps necessary setup and reaction when refining a cut.'],
+  'clip-analysis': ['Clip analysis', 'Creates an evidence-based overview and candidate moments for one source clip.'],
+  'highlight-selection': ['Cut-point guidance', 'Explains how selected moments should retain context and payoff.'],
+  montage: ['Film proposal', 'Orders existing highlights into an editable proposal; it never renders automatically.'],
+  'film-direction': ['Film direction', 'Sets the desired arc and pacing for a whole montage.'],
+  'film-regeneration': ['Proposal revision', 'Improves a saved film proposal using the latest user guidance.'],
+  'agent-test': ['Connection test', 'Verifies a provider can return the expected small JSON response.'],
+};
 async function loadPrompts() {
   const prompts = await api('/api/prompts');
   $('#prompts-panel').innerHTML = Object.entries(prompts)
     .map(
-      ([name, value]) =>
-        `<div class="prompt-entry"><h3>${safe(name)}.md</h3><textarea id="prompt-${safe(name)}" rows="11" aria-label="${safe(name)} prompt">${safe(value)}</textarea><button data-prompt-save="${safe(name)}" class="button-secondary">Save prompt</button></div>`,
+      ([name, value]) => {
+        const [title, description] = promptMeta[name] || [name, 'Advanced project instruction.'];
+        return `<div class="prompt-entry"><h3 title="${safe(name)}.md">${safe(title)}</h3><p class="muted little">${safe(description)}</p><textarea id="prompt-${safe(name)}" rows="11" aria-label="${safe(title)} prompt">${safe(value)}</textarea><button data-prompt-save="${safe(name)}" class="button-secondary">Save ${safe(title)}</button></div>`;
+      },
     )
     .join('');
   $$('[data-prompt-save]').forEach(
