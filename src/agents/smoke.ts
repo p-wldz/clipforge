@@ -5,7 +5,7 @@ import { runAgentText } from './agent.js';
 import { getPrompt } from './prompts.js';
 export async function smokeTestAgent(
   root: string,
-  provider: 'codex' | 'claude' | 'deepseek',
+  provider: 'codex' | 'claude' | 'deepseek' | 'openai',
   model?: string,
 ) {
   const dir = path.join(workspaceDir(root), 'agent-tests');

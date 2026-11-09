@@ -1,4 +1,5 @@
 import { deepseekChat } from './deepseek.js';
+import { openaiResponses } from './openai.js';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { AgentProvider } from '../core/paths.js';
@@ -208,7 +209,7 @@ export async function understandClip(options: {
   timeoutMs?: number;
 }): Promise<{ analysis: ClipUnderstanding; trace: AgentTrace }> {
   const { provider, model, workspace, folder, images, payload, onEvent } = options;
-  if (provider !== 'codex' && provider !== 'claude' && provider !== 'deepseek')
+  if (provider !== 'codex' && provider !== 'claude' && provider !== 'deepseek' && provider !== 'openai')
     throw new Error(`Unsupported agent: ${provider}`);
   const aiDir = path.join(folder, 'ai');
   await mkdir(aiDir, { recursive: true });
@@ -237,12 +238,12 @@ export async function understandClip(options: {
   try {
     let responseText = '';
     onEvent?.(`Invoking ${provider}${model ? ` (${model})` : ''} with ${images.length} frames`);
-    if (provider === 'deepseek') {
-      const result = await deepseekChat(prompt, {
+    if (provider === 'deepseek' || provider === 'openai') {
+      const result = provider === 'deepseek' ? await deepseekChat(prompt, {
         model,
         images,
         timeoutMs: options.timeoutMs ?? 10 * 60 * 1000,
-      });
+      }) : await openaiResponses(prompt, { model, images, timeoutMs: options.timeoutMs ?? 10 * 60 * 1000 });
       responseText = result.text;
       trace.model = result.model;
       trace.usage = result.usage;
@@ -253,7 +254,7 @@ export async function understandClip(options: {
       trace.apiEquivalentUsd = estimate.usd;
       trace.costStatus = estimate.status;
       onEvent?.(
-        `DeepSeek usage: ${trace.usage ? JSON.stringify(trace.usage) : 'not reported'}; estimated API cost: ${estimate.usd === null ? 'unpriced' : '$' + estimate.usd.toFixed(5)}`,
+        `${provider} usage: ${trace.usage ? JSON.stringify(trace.usage) : 'not reported'}; estimated API cost: ${estimate.usd === null ? 'unpriced' : '$' + estimate.usd.toFixed(5)}`,
       );
     } else if (provider === 'codex') {
       const args = [
@@ -348,7 +349,7 @@ export function codexTextArgs(model: string | undefined, outputPath: string) {
 
 /** Shared non-interactive agent path, with prompt over stdin to avoid Windows command-line length limits. */
 export async function runAgentText(
-  provider: 'codex' | 'claude' | 'deepseek',
+  provider: 'codex' | 'claude' | 'deepseek' | 'openai',
   model: string | undefined,
   workspace: string,
   prompt: string,
@@ -363,8 +364,10 @@ export async function runAgentText(
     `${provider}: starting model=${model || 'default'}, prompt=${prompt.length} chars, timeout=${Math.round(timeoutMs / 1000)}s`,
   );
   try {
-    if (provider === 'deepseek') {
-      const result = await deepseekChat(prompt, { model, timeoutMs, signal });
+    if (provider === 'deepseek' || provider === 'openai') {
+      const result = provider === 'deepseek'
+        ? await deepseekChat(prompt, { model, timeoutMs, signal })
+        : await openaiResponses(prompt, { model, timeoutMs, signal });
       onUsage?.(result.usage);
       await writeFile(outputPath, result.text);
       onEvent?.(`deepseek: completed in ${Date.now() - started}ms; response=${result.text.length} chars`);

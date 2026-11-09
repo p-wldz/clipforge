@@ -2,6 +2,10 @@ import { stopAtBoundary } from './playback.js';
 
 const $ = (q) => document.querySelector(q),
   $$ = (q) => [...document.querySelectorAll(q)];
+const openaiOption = document.createElement('option');
+openaiOption.value = 'openai';
+openaiOption.textContent = 'OpenAI API';
+$('#analysis-provider').append(openaiOption);
 const stopAnalysis = document.createElement('button');
 stopAnalysis.id = 'stop-analysis';
 stopAnalysis.className = 'button-secondary danger-button';
@@ -1084,7 +1088,7 @@ async function loadInventory() {
   ]
     .map(
       ([id, label]) =>
-        `<div><label>${label} agent<select id="agent-${id}">${['none', 'codex', 'claude', 'deepseek'].map((p) => `<option value="${p}" ${stages[id].provider === p ? 'selected' : ''}>${p}</option>`).join('')}</select></label></div><div><label>${label} model<select id="model-${id}">${modelOptions(stages[id].provider, stages[id].model || '')}</select></label></div>`,
+        `<div><label>${label} agent<select id="agent-${id}">${['none', 'codex', 'claude', 'deepseek', 'openai'].map((p) => `<option value="${p}" ${stages[id].provider === p ? 'selected' : ''}>${p}</option>`).join('')}</select></label></div><div><label>${label} model<select id="model-${id}">${modelOptions(stages[id].provider, stages[id].model || '')}</select></label></div>`,
     )
     .join('');
 }

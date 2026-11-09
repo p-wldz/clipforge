@@ -1,4 +1,5 @@
 import { deepseekKey, deepseekModels } from '../agents/deepseek.js';
+import { openaiKey, openaiModels } from '../agents/openai.js';
 import { detectAgents } from './providers.js';
 import { loadConfig } from './paths.js';
 import { run } from './process.js';
@@ -128,6 +129,26 @@ export async function scanAiModels(root: string) {
     source,
     note,
     usable: available,
+    accessVerified: false,
+  };
+  const openaiAvailable = !!openaiKey();
+  let openai: DiscoveredModel[] = [],
+    openaiNote = 'OPENAI_API_KEY is required for live model discovery';
+  if (openaiAvailable) {
+    try {
+      openai = (await openaiModels()).map((model) => normalize(model.id));
+      openaiNote = 'Live OpenAI API models for this key. Verify the selected model with Test AI.';
+    } catch (error) {
+      openaiNote = `OpenAI model discovery unavailable: ${(error as Error).message}`;
+    }
+  }
+  providers.openai = {
+    installed: openaiAvailable,
+    models: openai.map((model) => model.id),
+    modelDetails: openai,
+    source: openaiAvailable ? 'provider-api' : 'none',
+    note: openaiNote,
+    usable: openaiAvailable,
     accessVerified: false,
   };
   return {

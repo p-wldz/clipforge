@@ -110,7 +110,7 @@ export function startServer(root: string, port: number, host = '127.0.0.1'): Das
         const validate = (v: unknown) => {
           if (!v || typeof v !== 'object' || Array.isArray(v)) throw new Error('Invalid stage');
           const stage = v as Record<string, unknown>;
-          if (!['none', 'codex', 'claude', 'deepseek'].includes(String(stage.provider)))
+          if (!['none', 'codex', 'claude', 'deepseek', 'openai'].includes(String(stage.provider)))
             throw new Error('Unsupported provider');
           if (
             stage.model !== undefined &&
@@ -120,7 +120,7 @@ export function startServer(root: string, port: number, host = '127.0.0.1'): Das
           )
             throw new Error('Invalid model');
           return {
-            provider: stage.provider as 'none' | 'codex' | 'claude' | 'deepseek',
+            provider: stage.provider as 'none' | 'codex' | 'claude' | 'deepseek' | 'openai',
             ...(stage.model ? { model: stage.model as string } : {}),
           };
         };
@@ -169,7 +169,7 @@ export function startServer(root: string, port: number, host = '127.0.0.1'): Das
           config.aiStages?.understanding?.provider ??
           config.aiStages?.clipAnalysis?.provider ??
           config.agent.provider;
-        if (!['none', 'codex', 'claude', 'deepseek'].includes(String(provider)))
+        if (!['none', 'codex', 'claude', 'deepseek', 'openai'].includes(String(provider)))
           throw new Error('Unsupported analysis provider');
         if (typeof input.force !== 'boolean') throw new Error('force must be a boolean');
         const jobId = newId();
@@ -184,7 +184,7 @@ export function startServer(root: string, port: number, host = '127.0.0.1'): Das
           {
             withAgent: provider !== 'none',
             provider:
-              provider === 'none' ? undefined : (provider as 'codex' | 'claude' | 'deepseek'),
+              provider === 'none' ? undefined : (provider as 'codex' | 'claude' | 'deepseek' | 'openai'),
             force: input.force,
             signal: controller.signal,
           },
@@ -408,7 +408,7 @@ export function startServer(root: string, port: number, host = '127.0.0.1'): Das
           config.aiStages?.filmDirection?.provider ??
           config.aiStages?.montage?.provider ??
           config.agent.provider;
-        if (provider !== 'codex' && provider !== 'claude' && provider !== 'deepseek')
+        if (provider !== 'codex' && provider !== 'claude' && provider !== 'deepseek' && provider !== 'openai')
           throw new Error('Configure a Codex, Claude or DeepSeek movie suggestion provider first');
         const items = db.highlights().filter((h) => h.status !== 'rejected');
         if (!items.length) throw new Error('No highlight candidates. Analyze clips first.');
@@ -615,8 +615,8 @@ export function startServer(root: string, port: number, host = '127.0.0.1'): Das
         const stage = input.stage === 'montage' ? 'montage' : 'clipAnalysis';
         const profile = config.aiStages?.[stage] ?? config.agent;
         const provider = input.provider ?? profile.provider;
-        if (provider !== 'codex' && provider !== 'claude' && provider !== 'deepseek')
-          throw new Error('Select codex, claude or deepseek');
+        if (provider !== 'codex' && provider !== 'claude' && provider !== 'deepseek' && provider !== 'openai')
+          throw new Error('Select codex, claude, deepseek or openai');
         // Explicit action only, never called by polling.
         const result = await smokeTestAgent(
           root,

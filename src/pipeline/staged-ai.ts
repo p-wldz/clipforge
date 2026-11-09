@@ -318,7 +318,7 @@ export async function conversationUnderstanding(
   onEvent?: (message: string) => void,
 ) {
   const profile = profileFor(input.config, 'understanding');
-  if (!['codex', 'claude', 'deepseek'].includes(profile.provider))
+  if (!['codex', 'claude', 'deepseek', 'openai'].includes(profile.provider))
     throw new Error('Conversation Understanding requires a configured AI provider');
   const prompt = await getPrompt(root, 'conversation-understanding');
   const key = hash({
@@ -506,7 +506,7 @@ export async function baseUnderstanding(
   onEvent?: (message: string) => void,
 ) {
   const profile = profileFor(input.config, 'understanding');
-  if (!['codex', 'claude', 'deepseek'].includes(profile.provider))
+  if (!['codex', 'claude', 'deepseek', 'openai'].includes(profile.provider))
     throw new Error('Base understanding requires a configured AI provider');
   const prompt = await getPrompt(root, 'deep-action-analysis');
   const key = hash({
@@ -668,7 +668,7 @@ export async function contextualEditing(
   onEvent?: (message: string) => void,
 ) {
   const profile = profileFor(input.config, 'editing');
-  if (!['codex', 'claude', 'deepseek'].includes(profile.provider))
+  if (!['codex', 'claude', 'deepseek', 'openai'].includes(profile.provider))
     throw new Error('Contextual Editing requires a configured AI provider');
   const prompt = await getPrompt(root, 'contextual-editing');
   const key = hash({
@@ -753,7 +753,7 @@ export async function criticalReview(
   onEvent?: (message: string) => void,
 ) {
   const profile = profileFor(input.config, 'criticalReview');
-  if (!['codex', 'claude', 'deepseek'].includes(profile.provider))
+  if (!['codex', 'claude', 'deepseek', 'openai'].includes(profile.provider))
     throw new Error('Critical Review requires a configured AI provider');
   const prompt = await getPrompt(root, 'critical-review');
   const key = hash({
@@ -869,7 +869,7 @@ export async function contextualUnderstanding(
   },
 ) {
   const profile = profileFor(input.config, 'contextualUnderstanding');
-  if (!['codex', 'claude', 'deepseek'].includes(profile.provider))
+  if (!['codex', 'claude', 'deepseek', 'openai'].includes(profile.provider))
     throw new Error('Contextual understanding requires a configured AI provider');
   const prompt = await getPrompt(root, 'understanding-contextual');
   const key = hash({

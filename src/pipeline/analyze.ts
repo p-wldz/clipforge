@@ -26,7 +26,7 @@ export async function analyze(
   options: {
     withAgent: boolean;
     force: boolean;
-    provider?: 'codex' | 'claude' | 'cursor' | 'deepseek';
+    provider?: 'codex' | 'claude' | 'cursor' | 'deepseek' | 'openai';
     signal?: AbortSignal;
   },
   onProgress: (line: string) => void = console.log,
@@ -39,7 +39,7 @@ export async function analyze(
     throw new Error('No agent selected. Run clipforge agent codex or use --agent codex');
   if (provider === 'cursor')
     throw new Error(
-      'Cursor analysis adapter is not implemented. Choose codex, claude or deepseek.',
+      'Cursor analysis adapter is not implemented. Choose codex, claude, deepseek or openai.',
     );
   const db = new Store(root),
     runId = newId();
@@ -356,7 +356,7 @@ export async function analyze(
           const editingProfile = options.provider
             ? { provider: options.provider, model: config.agent.model }
             : profileFor(config, 'editing');
-          if (!['codex', 'claude', 'deepseek'].includes(editingProfile.provider)) {
+          if (!['codex', 'claude', 'deepseek', 'openai'].includes(editingProfile.provider)) {
             event(
               'editing',
               `${name}: editing provider disabled; base understanding remains available`,
@@ -368,7 +368,7 @@ export async function analyze(
             event('editing', `${name}: selecting highlights for editing context`, id, 'info', name);
           try {
             if (!deepAction) throw new Error('Deep Action Analysis is unavailable');
-            if (!['codex', 'claude', 'deepseek'].includes(editingProfile.provider))
+            if (!['codex', 'claude', 'deepseek', 'openai'].includes(editingProfile.provider))
               throw new Error('Editing provider is disabled');
             event(
               'editing',
@@ -506,7 +506,7 @@ export async function analyze(
             'skipped',
             null,
             null,
-            'Agent analysis not requested. Use --agent codex, claude or deepseek',
+            'Agent analysis not requested. Use --agent codex, claude, deepseek or openai',
           );
           event('llm', `${name}: SKIPPED (no --agent flag)`, id, 'warn', name);
         }

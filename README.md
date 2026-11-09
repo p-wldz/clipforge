@@ -87,6 +87,8 @@ clipforge --env-file /secure/path/clipforge.env analyze --agent deepseek
 
 The command reports only the number of variables loaded, never their values. Existing environment variables take precedence, which keeps CI and shell-injected secrets authoritative. Open **AI adapters** in the dashboard to choose a discovered model, then run its connection test before analyzing media.
 
+OpenAI API works the same way with `OPENAI_API_KEY`; select `openai` after scanning its live model catalog. Clipforge uses the Responses API and sends frames only for an explicit OpenAI analysis run.
+
 ## What Clipforge does
 
 1. **Media analysis** probes the video, samples frames, records audio activity, and optionally runs local transcription or sound classification.

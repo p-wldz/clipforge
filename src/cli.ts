@@ -56,8 +56,8 @@ const setupScope = takeOption('--scope');
 const cmd = raw.shift();
 const agentIndex = raw.indexOf('--agent');
 const agentChoice =
-  agentIndex >= 0 && ['codex', 'claude', 'cursor', 'deepseek'].includes(raw[agentIndex + 1] ?? '')
-    ? (raw[agentIndex + 1] as 'codex' | 'claude' | 'cursor' | 'deepseek')
+  agentIndex >= 0 && ['codex', 'claude', 'cursor', 'deepseek', 'openai'].includes(raw[agentIndex + 1] ?? '')
+    ? (raw[agentIndex + 1] as 'codex' | 'claude' | 'cursor' | 'deepseek' | 'openai')
     : undefined;
 if (agentChoice) raw.splice(agentIndex + 1, 1);
 const flags = new Set(raw.filter((s) => s.startsWith('--')));
@@ -135,11 +135,11 @@ async function main() {
         );
       if (args[0] === 'set') {
         const provider = args[2];
-        if (!provider || !['none', 'codex', 'claude', 'deepseek'].includes(provider))
-          throw new Error('Agent must be none, codex, claude or deepseek');
+        if (!provider || !['none', 'codex', 'claude', 'deepseek', 'openai'].includes(provider))
+          throw new Error('Agent must be none, codex, claude, deepseek or openai');
         const current: NonNullable<typeof config.aiStages> = config.aiStages ?? {};
         current[stage as keyof typeof current] = {
-          provider: provider as 'none' | 'codex' | 'claude' | 'deepseek',
+          provider: provider as 'none' | 'codex' | 'claude' | 'deepseek' | 'openai',
           ...(args[3] ? { model: args[3] } : {}),
         };
         config.aiStages = current;
@@ -153,7 +153,7 @@ async function main() {
         if (
           profile.provider !== 'codex' &&
           profile.provider !== 'claude' &&
-          profile.provider !== 'deepseek'
+          profile.provider !== 'deepseek' && profile.provider !== 'openai'
         )
           throw new Error('Stage requires Codex, Claude or DeepSeek');
         const result = await smokeTestAgent(root, profile.provider, profile.model);
@@ -210,7 +210,7 @@ async function main() {
         config.aiStages?.montage?.provider ??
         config.aiStages?.filmDirection?.provider ??
         config.agent.provider;
-      if (provider !== 'codex' && provider !== 'claude' && provider !== 'deepseek')
+      if (provider !== 'codex' && provider !== 'claude' && provider !== 'deepseek' && provider !== 'openai')
         throw new Error('Choose Codex, Claude or DeepSeek');
       const db = new Store(root);
       try {
@@ -247,7 +247,7 @@ async function main() {
       if (args[0] === 'test') {
         const config = await loadConfig(root);
         const provider = args[1] ?? config.agent.provider;
-        if (provider !== 'codex' && provider !== 'claude' && provider !== 'deepseek')
+        if (provider !== 'codex' && provider !== 'claude' && provider !== 'deepseek' && provider !== 'openai')
           throw new Error('Select Codex, Claude or DeepSeek for a real connection test');
         console.log(`Calling ${provider} (this consumes agent quota)...`);
         const result = await smokeTestAgent(root, provider, config.agent.model);
@@ -257,8 +257,8 @@ async function main() {
       }
       const config = await loadConfig(root);
       if (args[0]) {
-        if (!['none', 'codex', 'claude', 'cursor', 'deepseek'].includes(args[0]))
-          throw new Error('Agent must be none|codex|claude|cursor|deepseek');
+        if (!['none', 'codex', 'claude', 'cursor', 'deepseek', 'openai'].includes(args[0]))
+          throw new Error('Agent must be none|codex|claude|cursor|deepseek|openai');
         config.agent.provider = args[0] as typeof config.agent.provider;
         await writeFile(
           path.join(workspaceDir(root), 'config.json'),
@@ -358,7 +358,7 @@ async function main() {
     }
     case 'analyze': {
       const input = path.resolve(
-        args[0] && !['codex', 'claude', 'cursor', 'deepseek'].includes(args[0])
+        args[0] && !['codex', 'claude', 'cursor', 'deepseek', 'openai'].includes(args[0])
           ? args[0]
           : path.join(root, (await loadConfig(root)).mediaDir),
       );
