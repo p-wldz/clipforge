@@ -100,7 +100,8 @@ let clips = [],
   uiJob = null,
   playing = false,
   playIndex = 0,
-  previewItems = [];
+  previewItems = [],
+  browserPreviews = new Map();
 const clipOf = (h) => clips.find((c) => c.id === h?.clip_id);
 const highlightOf = (id) => highlights.find((h) => h.id === id);
 const fileName = (p) => (p || '').split(/[\\/]/).pop();
@@ -286,8 +287,33 @@ async function showHighlight(id) {
   renderLibrary();
   const h = selected,
     a = analyses.find((x) => x.clip_id === h.clip_id);
+  const originalSource = `/media/${encodeURIComponent(h.clip_id)}`;
+  const previewSource = browserPreviews.get(h.clip_id) || originalSource;
+  const needsPreview = !/\.(mp4|webm)$/i.test(clipOf(h)?.source_path || '');
   $('#review').innerHTML =
     `<video id="review-player" src="/media/${encodeURIComponent(h.clip_id)}" controls preload="metadata"></video><h2>${safe(h.title)}</h2><p>${safe(h.description)}</p><div class="range-fields"><label>Start (seconds)<input id="review-start" type="number" step="0.1" min="0" value="${h.start}"></label><label>End (seconds)<input id="review-end" type="number" step="0.1" min="0" max="${clipOf(h)?.duration || 1000}" value="${h.end}"></label></div><div class="review-buttons"><button id="review-save" class="button-secondary">Save cut</button><button id="review-approve">Approve</button><button id="review-reject">Reject</button><button id="review-to-film" class="primary">Add to film →</button></div><div class="clip-meta"><span class="eyebrow">WHOLE CLIP AI ANALYSIS</span><h3>${safe(a?.title || 'Not yet analyzed')}</h3><p>${safe(a?.summary || a?.error || 'No summary available')}</p><div id="clip-editorial"></div><details><summary>AI evidence, story and reasoning</summary><div id="clip-story"></div></details><details><summary>LLM request and raw response (technical)</summary><pre id="clip-raw" class="log">Loading...</pre></details></div>`;
+  $('#review-player').src = previewSource;
+  if (needsPreview) {
+    $('#review-player').insertAdjacentHTML(
+      'afterend',
+      '<p class="muted little">This format may not play in this browser. <button id="create-browser-preview" class="button-secondary">Create local MP4 preview</button> The generated preview stays in this workspace; the original is unchanged.</p>',
+    );
+    $('#create-browser-preview').addEventListener('click', async () => {
+      const button = $('#create-browser-preview');
+      await clickTask(button, 'Creating local preview...', async () => {
+        const result = await send(
+          `/api/clips/${encodeURIComponent(h.clip_id)}/browser-preview`,
+          'POST',
+          {},
+        );
+        browserPreviews.set(h.clip_id, result.url);
+        const video = $('#review-player');
+        video.src = result.url;
+        video.load();
+        notify(result.cached ? 'Using the existing local MP4 preview' : 'Local MP4 preview created');
+      });
+    });
+  }
   $('#clip-editorial').insertAdjacentHTML(
     'afterend',
     '<details class="clip-meta"><summary>Conversation understanding</summary><div id="clip-conversations" class="cards-list">Loading…</div></details>',
@@ -842,7 +868,7 @@ function playPart(index) {
   player.style.display = 'block';
   $('#preview-placeholder').hidden = true;
   $('#preview-status').textContent = `Cut ${index + 1}/${previewItems.length}: ${item.title}`;
-  const source = `/media/${encodeURIComponent(item.clip_id)}`;
+  const source = browserPreviews.get(item.clip_id) || `/media/${encodeURIComponent(item.clip_id)}`;
   const seek = () => {
     player.playbackRate = item.speed || 1;
     player.currentTime = item.start;

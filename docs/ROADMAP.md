@@ -17,7 +17,7 @@
 - [ ] Add native Whisper/faster-whisper/whisper.cpp adapters and diarization
 - [ ] Add true vision analysis with defined schemas for frame sequences
 - [ ] Add job queue with cancel/progress/resume and stage cache keys
-- [ ] Fix media browser compatibility for non-MP4 inputs via local proxies
+- [x] Offer explicit, cached local MP4 browser previews for non-MP4/WebM source containers
 - [ ] Harden renderer: silence source, variable frame rates, sample aspect ratios, subtitles
 - [ ] Add UI timeline, title editing and reorderable clips
 - [ ] Add automated cross-platform integration tests (Windows/Linux/macOS)

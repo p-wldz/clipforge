@@ -28,6 +28,7 @@ For AI-derived highlights, an included Deep Action's saved interval must include
 - `POST /api/projects` `{name, highlightIds}` with *approved* IDs
 - `POST /api/projects/:id/render`
 - `GET /media/:clipId` with byte-range support; original media, local server only
+- `POST /api/clips/:clipId/browser-preview` explicitly creates or reuses a local MP4/H.264/AAC derivative at `artifacts/<clipId>/browser-preview.mp4`; it never runs while merely viewing media. `GET /media/:clipId/browser-preview` streams that generated asset with the same range support.
 - `GET /thumbnail/:clipId`
 - `POST /api/analysis/jobs/:jobId/cancel` cooperatively cancels a dashboard analysis. In-flight agent subprocesses are terminated; local stages stop before the next clip.
 - `POST /api/analysis/jobs/active/cancel` cancels the dashboard's active analysis without requiring a browser-held job ID. It never claims to stop a separately run CLI process.

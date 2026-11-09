@@ -1,6 +1,6 @@
 import http from 'node:http';
 import path from 'node:path';
-import { readFile, stat, writeFile, rm } from 'node:fs/promises';
+import { mkdir, readFile, stat, writeFile, rm } from 'node:fs/promises';
 import { createReadStream } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { Store } from './core/db.js';
@@ -23,8 +23,13 @@ import { scanAiModels } from './core/ai-models.js';
 import { analyze } from './pipeline/analyze.js';
 import { contexts } from './pipeline/staged-ai.js';
 import { validateCatalog } from './core/usage.js';
-import { errorLogEntry, errorStatus, publicError } from './core/errors.js';
+import { AppError, errorLogEntry, errorStatus, publicError } from './core/errors.js';
 import { isAnalysisProvider } from './core/providers.js';
+import {
+  browserPreviewMetadataPath,
+  browserPreviewPath,
+} from './core/browser-playback.js';
+import { run } from './core/process.js';
 const dashboardRoot = fileURLToPath(new URL('./dashboard/', import.meta.url));
 const contentTypes: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
@@ -33,6 +38,7 @@ const contentTypes: Record<string, string> = {
   '.jpg': 'image/jpeg',
   '.png': 'image/png',
   '.mp4': 'video/mp4',
+  '.webm': 'video/webm',
 };
 async function jsonBody(req: http.IncomingMessage) {
   let buf = '';
@@ -56,6 +62,36 @@ async function streamFile(res: http.ServerResponse, file: string) {
     'cache-control': 'no-store',
   });
   res.end(data);
+}
+async function streamMedia(
+  res: http.ServerResponse,
+  file: string,
+  rangeHeader: string | undefined,
+) {
+  const info = await stat(file);
+  let start = 0,
+    end = info.size - 1;
+  const range = rangeHeader?.match(/^bytes=(\d*)-(\d*)$/);
+  if (range) {
+    start = range[1] ? Number(range[1]) : 0;
+    end = range[2] ? Math.min(end, Number(range[2])) : end;
+  }
+  if (
+    !Number.isSafeInteger(start) ||
+    !Number.isSafeInteger(end) ||
+    start > end ||
+    start >= info.size
+  ) {
+    res.writeHead(416, { 'content-range': `bytes */${info.size}` });
+    return res.end();
+  }
+  res.writeHead(range ? 206 : 200, {
+    'content-type': contentTypes[path.extname(file).toLowerCase()] ?? 'application/octet-stream',
+    'accept-ranges': 'bytes',
+    'content-length': end - start + 1,
+    ...(range ? { 'content-range': `bytes ${start}-${end}/${info.size}` } : {}),
+  });
+  createReadStream(file, { start, end }).pipe(res);
 }
 type RenderJob = {
   status: 'running' | 'completed' | 'failed';
@@ -894,36 +930,93 @@ export function startServer(root: string, port: number, host = '127.0.0.1'): Das
         const file = await render(root, parts[2]);
         return send(res, 200, { file });
       }
+      if (
+        parts[0] === 'api' &&
+        parts[1] === 'clips' &&
+        parts[2] &&
+        parts[3] === 'browser-preview' &&
+        parts.length === 4 &&
+        req.method === 'POST'
+      ) {
+        const clip = db.clip(parts[2]);
+        if (!clip) return send(res, 404, { error: 'Clip not found' });
+        const output = browserPreviewPath(root, clip.id);
+        const source = await stat(clip.source_path);
+        const existing = await stat(output).catch(() => null);
+        const cached = Boolean(existing && existing.mtimeMs >= source.mtimeMs);
+        if (!cached) {
+          await mkdir(path.dirname(output), { recursive: true });
+          // This creates an inspectable derived asset only after an explicit UI request.
+          try {
+            await run(
+              'ffmpeg',
+              [
+                '-hide_banner',
+                '-loglevel',
+                'error',
+                '-i',
+                clip.source_path,
+                '-map',
+                '0:v:0',
+                '-map',
+                '0:a?',
+                '-c:v',
+                'libx264',
+                '-preset',
+                'veryfast',
+                '-crf',
+                '23',
+                '-c:a',
+                'aac',
+                '-movflags',
+                '+faststart',
+                '-y',
+                output,
+              ],
+              { timeoutMs: 10 * 60_000 },
+            );
+          } catch {
+            throw new AppError(
+              'Browser preview could not be created.',
+              'BROWSER_PREVIEW_FAILED',
+              'Run clipforge doctor to confirm FFmpeg is available, then try again.',
+              422,
+            );
+          }
+          await writeFile(
+            browserPreviewMetadataPath(root, clip.id),
+            JSON.stringify(
+              {
+                version: 1,
+                sourcePath: clip.source_path,
+                sourceModifiedAt: source.mtime.toISOString(),
+                generatedAt: new Date().toISOString(),
+                format: 'mp4/h264/aac',
+              },
+              null,
+              2,
+            ),
+          );
+        }
+        return send(res, 200, {
+          url: `/media/${encodeURIComponent(clip.id)}/browser-preview`,
+          cached,
+        });
+      }
+      if (
+        parts[0] === 'media' &&
+        parts[2] === 'browser-preview' &&
+        parts.length === 3 &&
+        req.method === 'GET'
+      ) {
+        const clip = db.clip(parts[1]!);
+        if (!clip) return send(res, 404, { error: 'Clip not found' });
+        return await streamMedia(res, browserPreviewPath(root, clip.id), req.headers.range);
+      }
       if (parts[0] === 'media' && parts.length === 2 && req.method === 'GET') {
         const clip = db.clip(parts[1]!);
         if (!clip) return send(res, 404, { error: 'Clip not found' });
-        const file = clip.source_path;
-        const info = await stat(file);
-        let start = 0,
-          end = info.size - 1;
-        const range = req.headers.range?.match(/^bytes=(\d*)-(\d*)$/);
-        if (range) {
-          start = range[1] ? Number(range[1]) : 0;
-          end = range[2] ? Math.min(end, Number(range[2])) : end;
-        }
-        if (
-          !Number.isSafeInteger(start) ||
-          !Number.isSafeInteger(end) ||
-          start > end ||
-          start >= info.size
-        ) {
-          res.writeHead(416, { 'content-range': `bytes */${info.size}` });
-          return res.end();
-        }
-        res.writeHead(range ? 206 : 200, {
-          'content-type': 'video/mp4',
-          'accept-ranges': 'bytes',
-          'content-length': end - start + 1,
-          ...(range ? { 'content-range': `bytes ${start}-${end}/${info.size}` } : {}),
-        });
-        const { createReadStream } = await import('node:fs');
-        createReadStream(file, { start, end }).pipe(res);
-        return;
+        return await streamMedia(res, clip.source_path, req.headers.range);
       }
       if (parts[0] === 'thumbnail' && parts.length === 2 && req.method === 'GET') {
         const folder = path.join(artifactDir(root, parts[1]!), 'frames');
