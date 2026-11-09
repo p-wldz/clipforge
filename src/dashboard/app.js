@@ -6,6 +6,24 @@ const openaiOption = document.createElement('option');
 openaiOption.value = 'openai';
 openaiOption.textContent = 'OpenAI API';
 $('#analysis-provider').append(openaiOption);
+const providerHelp = document.createElement('p');
+providerHelp.id = 'analysis-provider-help';
+providerHelp.className = 'muted little';
+providerHelp.setAttribute('role', 'status');
+$('#analysis-provider').closest('label').after(providerHelp);
+const providerHints = {
+  none: 'Local analysis only. No frames, video, audio, or transcripts leave this computer.',
+  codex: 'Installed Codex client. Uses its signed-in OS account and sends selected frames only for this explicit run.',
+  claude: 'Installed Claude client. Uses its signed-in OS account and sends analysis input only for this explicit run.',
+  deepseek: 'DeepSeek API key. Start Clipforge with --env-file containing DEEPSEEK_API_KEY before testing or analyzing.',
+  openai: 'OpenAI API key. Start Clipforge with --env-file containing OPENAI_API_KEY, choose a discovered model, then test it.',
+};
+function updateProviderHelp() {
+  const provider = $('#analysis-provider').value;
+  providerHelp.textContent = providerHints[provider] || 'Choose a provider, then test it before analyzing media.';
+}
+$('#analysis-provider').addEventListener('change', updateProviderHelp);
+updateProviderHelp();
 const stopAnalysis = document.createElement('button');
 stopAnalysis.id = 'stop-analysis';
 stopAnalysis.className = 'button-secondary danger-button';
@@ -1036,6 +1054,7 @@ async function loadSettings() {
   $('#ctx-description').value = c.project.description;
   $('#ctx-content').value = settings.context;
   $('#analysis-provider').value = c.aiStages?.clipAnalysis?.provider || c.agent.provider;
+  updateProviderHelp();
   await loadInventory();
   renderProcessing();
   await loadPrompts();

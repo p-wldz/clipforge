@@ -89,6 +89,14 @@ The command reports only the number of variables loaded, never their values. Exi
 
 OpenAI API works the same way with `OPENAI_API_KEY`; select `openai` after scanning its live model catalog. Clipforge uses the Responses API and sends frames only for an explicit OpenAI analysis run.
 
+| Provider choice | Authentication route | What it means |
+| --- | --- | --- |
+| `none` | None | Fully local candidate analysis. |
+| `codex` / `claude` | Installed, signed-in OS client | Uses that client’s account and configuration; no API key is saved by Clipforge. |
+| `deepseek` / `openai` | Explicit environment variable | Uses `DEEPSEEK_API_KEY` or `OPENAI_API_KEY` from the current terminal or `--env-file`. |
+
+An installed client and an API key are deliberately separate choices. Clipforge does not silently switch between them.
+
 ## What Clipforge does
 
 1. **Media analysis** probes the video, samples frames, records audio activity, and optionally runs local transcription or sound classification.
