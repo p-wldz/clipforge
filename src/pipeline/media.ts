@@ -11,6 +11,9 @@ export interface FrameSample {
   path: string;
   timestamp: number;
 }
+export interface SceneChange {
+  at: number;
+}
 export async function probe(file: string, signal?: AbortSignal): Promise<Metadata> {
   const { stdout } = await run(
     'ffprobe',
@@ -128,6 +131,40 @@ export async function audioEvents(
     if ((error as Error).name === 'AbortError') throw error;
     return [{ start: 0, end: duration }];
   }
+}
+/**
+ * Finds abrupt visual transitions with FFmpeg's deterministic scene metric.
+ * A transition is evidence of an edit or view change, not a gameplay event.
+ */
+export async function sceneChanges(
+  file: string,
+  signal?: AbortSignal,
+): Promise<SceneChange[]> {
+  const { stderr } = await run(
+    'ffmpeg',
+    [
+      '-hide_banner',
+      '-i',
+      file,
+      '-an',
+      '-vf',
+      "select='gt(scene,0.3)',showinfo",
+      '-f',
+      'null',
+      '-',
+    ],
+    { timeoutMs: 120000, signal },
+  );
+  return parseSceneChanges(String(stderr));
+}
+
+export function parseSceneChanges(output: string): SceneChange[] {
+  const seen = new Set<number>();
+  for (const match of output.matchAll(/pts_time:([0-9.]+)/g)) {
+    const at = Number(match[1]);
+    if (Number.isFinite(at) && at >= 0) seen.add(Number(at.toFixed(3)));
+  }
+  return [...seen].sort((a, b) => a - b).map((at) => ({ at }));
 }
 export async function saveJson(file: string, data: unknown) {
   await mkdir(path.dirname(file), { recursive: true });

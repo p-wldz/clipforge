@@ -4,8 +4,8 @@ import { createHash } from 'node:crypto';
 import { Store, type Highlight } from '../core/db.js';
 import { stableId, artifactDir, loadConfig, newId } from '../core/paths.js';
 import { isAnalysisProvider } from '../core/providers.js';
-import { probe, frames, audioEvents, saveJson } from './media.js';
-import { candidates } from './highlights.js';
+import { probe, frames, audioEvents, saveJson, sceneChanges } from './media.js';
+import { candidates, type CandidateSignal } from './highlights.js';
 import { classifySound } from './sound-classifier.js';
 import { inspectAudio } from './audio-signals.js';
 import { transcribe } from './transcribe.js';
@@ -216,22 +216,45 @@ export async function analyze(
         });
         await saveJson(path.join(folder, 'audio-activity.json'), activity);
         if (transcript) await saveJson(path.join(folder, 'transcript.json'), transcript);
-        const classifiedWindows = classified.map((e) => ({
+        event('scene-changes', `${name}: detecting visual scene changes`, id, 'info', name);
+        const scenes = await optionalStage(
+          'scene-changes',
+          () => sceneChanges(full, options.signal),
+          [],
+        );
+        await saveJson(path.join(folder, 'scene-changes.json'), scenes);
+        const classifiedWindows: CandidateSignal[] = classified.map((e) => ({
           start: Math.max(0, e.start - 3),
           end: Math.min(meta.duration, e.end + 4),
+          source: 'sound_event',
         }));
-        const signalWindows = audioSignals.events.map((e) => ({
+        const signalWindows: CandidateSignal[] = audioSignals.events.map((e) => ({
           start: Math.max(0, e.start - 3),
           end: Math.min(meta.duration, e.end + 4),
+          source: 'volume_peak',
         }));
-        const transcriptWindows = segments.map((s) => ({
+        const transcriptWindows: CandidateSignal[] = segments.map((s) => ({
           start: Math.max(0, s.start - 2),
           end: Math.min(meta.duration, s.end + 2),
+          source: 'speech',
         }));
+        const sceneWindows: CandidateSignal[] = scenes.map((scene) => ({
+          start: Math.max(0, scene.at - 3),
+          end: Math.min(meta.duration, scene.at + 4),
+          source: 'scene_change',
+        }));
+        const candidateSignals: CandidateSignal[] = [
+          ...classifiedWindows,
+          ...signalWindows,
+          ...transcriptWindows,
+          ...sceneWindows,
+          ...activity.map((window) => ({ ...window, source: 'audio_activity' as const })),
+        ];
+        await saveJson(path.join(folder, 'candidate-signals.json'), candidateSignals);
         let highlights = candidates(
           id,
           meta.duration,
-          [...classifiedWindows, ...signalWindows, ...transcriptWindows, ...activity],
+          candidateSignals,
           config.analysis.maxHighlightsPerClip,
           config.analysis.highlightDurationSeconds,
         );

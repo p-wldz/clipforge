@@ -5,7 +5,7 @@ CLI ───────────────┐
                    ├── Node core ── SQLite .clipforge/state.sqlite
 Dashboard HTTP ───┘          │
                               ├── ffprobe/ffmpeg (deterministic)
-                              ├── audio/silence candidate detector
+                              ├── scene, volume, speech, and event candidate detectors
                               ├── optional transcription CLI
                               ├── optional Codex/Claude adapter
                               └── reviewed montage → FFmpeg render
@@ -16,9 +16,10 @@ Dashboard HTTP ───┘          │
 ## Pipeline
 1. `probe`: metadata from `ffprobe`; rejects files without video.
 2. `frames`: up to 30 cached JPEGs spread evenly across the full source duration, with timestamps. The agent receives a bounded, timestamped selection that preserves clip endpoints, event-adjacent evidence, and coverage of long quiet spans.
-3. `audioEvents`: `silencedetect` inverted into active intervals. This does not mean a kill or highlight.
-4. `transcribe`: optional provider configured as process command + argv templates. Default is off.
-5. `candidates`: interval deduplication and bounded windows, marked `pending_review`.
+3. `audioEvents` and `audio-signals`: active audio intervals and generic volume peaks. Neither means a kill or highlight.
+4. `transcribe`: optional provider configured as process command + argv templates. Its timestamped segments create speech evidence windows.
+5. `sceneChanges`: FFmpeg scene-score transitions are saved locally as visual-change evidence, not gameplay events.
+6. `candidates`: sound-classifier events, scene changes, volume peaks, speech windows, and audio activity are source-labelled, deduplicated into bounded windows, and marked `pending_review`.
 6. `agent`: optional explicit call to Codex/Claude for text descriptions and scores. Nonfatal failure.
 7. `review`: dashboard or CLI approval; edited boundaries validated against original clip.
 8. `project/render`: explicit project creation, H.264/AAC segment re-encoding, concat into MP4.

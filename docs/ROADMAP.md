@@ -13,7 +13,7 @@
 - [x] Centralize supported provider names and authentication modes for CLI, server, and pipeline validation
 - [x] Cross-platform CI and npm package pre-publish verification
 - [x] Deep Action Analysis, contextual editing, and a bounded optional critical review pass with inspectable artifacts
-- [ ] Add scene change, volume peaks, speech windows, and event-based candidate generation
+- [x] Add scene change, volume peaks, speech windows, and event-based candidate generation
 - [ ] Add native Whisper/faster-whisper/whisper.cpp adapters and diarization
 - [ ] Add true vision analysis with defined schemas for frame sequences
 - [ ] Add job queue with cancel/progress/resume and stage cache keys
