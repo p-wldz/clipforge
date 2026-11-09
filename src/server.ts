@@ -24,6 +24,7 @@ import { analyze } from './pipeline/analyze.js';
 import { contexts } from './pipeline/staged-ai.js';
 import { validateCatalog } from './core/usage.js';
 import { errorStatus, publicError } from './core/errors.js';
+import { isAnalysisProvider } from './core/providers.js';
 const dashboardRoot = fileURLToPath(new URL('./dashboard/', import.meta.url));
 const contentTypes: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
@@ -110,7 +111,7 @@ export function startServer(root: string, port: number, host = '127.0.0.1'): Das
         const validate = (v: unknown) => {
           if (!v || typeof v !== 'object' || Array.isArray(v)) throw new Error('Invalid stage');
           const stage = v as Record<string, unknown>;
-          if (!['none', 'codex', 'claude', 'deepseek', 'openai'].includes(String(stage.provider)))
+          if (stage.provider !== 'none' && !isAnalysisProvider(stage.provider))
             throw new Error('Unsupported provider');
           if (
             stage.model !== undefined &&
@@ -169,7 +170,7 @@ export function startServer(root: string, port: number, host = '127.0.0.1'): Das
           config.aiStages?.understanding?.provider ??
           config.aiStages?.clipAnalysis?.provider ??
           config.agent.provider;
-        if (!['none', 'codex', 'claude', 'deepseek', 'openai'].includes(String(provider)))
+        if (provider !== 'none' && !isAnalysisProvider(provider))
           throw new Error('Unsupported analysis provider');
         if (typeof input.force !== 'boolean') throw new Error('force must be a boolean');
         const jobId = newId();
@@ -408,7 +409,7 @@ export function startServer(root: string, port: number, host = '127.0.0.1'): Das
           config.aiStages?.filmDirection?.provider ??
           config.aiStages?.montage?.provider ??
           config.agent.provider;
-        if (provider !== 'codex' && provider !== 'claude' && provider !== 'deepseek' && provider !== 'openai')
+        if (!isAnalysisProvider(provider))
           throw new Error('Configure a Codex, Claude or DeepSeek movie suggestion provider first');
         const items = db.highlights().filter((h) => h.status !== 'rejected');
         if (!items.length) throw new Error('No highlight candidates. Analyze clips first.');
@@ -615,7 +616,7 @@ export function startServer(root: string, port: number, host = '127.0.0.1'): Das
         const stage = input.stage === 'montage' ? 'montage' : 'clipAnalysis';
         const profile = config.aiStages?.[stage] ?? config.agent;
         const provider = input.provider ?? profile.provider;
-        if (provider !== 'codex' && provider !== 'claude' && provider !== 'deepseek' && provider !== 'openai')
+        if (!isAnalysisProvider(provider))
           throw new Error('Select codex, claude, deepseek or openai');
         // Explicit action only, never called by polling.
         const result = await smokeTestAgent(

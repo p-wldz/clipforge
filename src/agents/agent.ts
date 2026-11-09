@@ -3,6 +3,7 @@ import { openaiResponses } from './openai.js';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { AgentProvider } from '../core/paths.js';
+import { isAnalysisProvider, type AnalysisProvider } from '../core/providers.js';
 import { run } from '../core/process.js';
 import { getPrompt } from './prompts.js';
 import {
@@ -209,7 +210,7 @@ export async function understandClip(options: {
   timeoutMs?: number;
 }): Promise<{ analysis: ClipUnderstanding; trace: AgentTrace }> {
   const { provider, model, workspace, folder, images, payload, onEvent } = options;
-  if (provider !== 'codex' && provider !== 'claude' && provider !== 'deepseek' && provider !== 'openai')
+  if (!isAnalysisProvider(provider))
     throw new Error(`Unsupported agent: ${provider}`);
   const aiDir = path.join(folder, 'ai');
   await mkdir(aiDir, { recursive: true });
@@ -349,7 +350,7 @@ export function codexTextArgs(model: string | undefined, outputPath: string) {
 
 /** Shared non-interactive agent path, with prompt over stdin to avoid Windows command-line length limits. */
 export async function runAgentText(
-  provider: 'codex' | 'claude' | 'deepseek' | 'openai',
+  provider: AnalysisProvider,
   model: string | undefined,
   workspace: string,
   prompt: string,

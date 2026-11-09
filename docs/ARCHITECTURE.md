@@ -37,7 +37,7 @@ Transcript discovery is local: SQLite FTS5 indexes the current timestamped trans
 Single-user local processing. SQLite WAL is sufficient for metadata; artifacts are files. CLI operates one video at a time. Long-term direction: job table and worker process, resumable per-stage job state, parallel limits. Avoid Redis/Postgres until justified.
 
 ## Agent boundary
-Provider choices live in `.clipforge/config.json`: `none`, `codex`, or `claude`. The CLI checks binaries without invoking LLMs. Agent runs are opt-in `analyze --agent`. Prompt text is treated as untrusted and agents must not be granted broad filesystem write access. Codex receives sample JPEG paths as `--image`; Claude adapter currently sends file paths in its prompt, not binary images, and may not visually inspect them. Plan dedicated vision provider for reliable visual descriptions.
+Provider choices live in `.clipforge/config.json`: `none`, installed-client adapters (`codex`, `claude`), and API-key adapters (`deepseek`, `openai`). `src/core/providers.ts` is the single registry for supported analysis providers and their authentication route. The CLI checks binaries without invoking LLMs. Agent runs are opt-in `analyze --agent`. Prompt text is treated as untrusted and agents must not be granted broad filesystem write access. Codex receives sample JPEG paths as `--image`; Claude adapter currently sends file paths in its prompt, not binary images, and may not visually inspect them.
 
 ## Important tradeoff
 The MVP does not yet 'understand' gameplay. It proposes audio-driven candidate windows and accepts optional agent descriptions. A next phase should implement OCR/HUD game plugins, STT provider abstraction, motion/sound event detectors, and scoring calibrated against user feedback.

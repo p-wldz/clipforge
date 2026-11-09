@@ -3,7 +3,7 @@ import path from 'node:path';
 import { existsSync } from 'node:fs';
 import { writeFile } from 'node:fs/promises';
 import { initWizard } from './core/wizard.js';
-import { detectAgents } from './core/providers.js';
+import { detectAgents, isAnalysisProvider, isKnownProvider } from './core/providers.js';
 import { scanAiModels } from './core/ai-models.js';
 import { initWorkspace, loadConfig, saveConfig, workspaceDir, newId } from './core/paths.js';
 import { doctor } from './core/doctor.js';
@@ -56,7 +56,7 @@ const setupScope = takeOption('--scope');
 const cmd = raw.shift();
 const agentIndex = raw.indexOf('--agent');
 const agentChoice =
-  agentIndex >= 0 && ['codex', 'claude', 'cursor', 'deepseek', 'openai'].includes(raw[agentIndex + 1] ?? '')
+  agentIndex >= 0 && isKnownProvider(raw[agentIndex + 1])
     ? (raw[agentIndex + 1] as 'codex' | 'claude' | 'cursor' | 'deepseek' | 'openai')
     : undefined;
 if (agentChoice) raw.splice(agentIndex + 1, 1);
@@ -135,7 +135,7 @@ async function main() {
         );
       if (args[0] === 'set') {
         const provider = args[2];
-        if (!provider || !['none', 'codex', 'claude', 'deepseek', 'openai'].includes(provider))
+        if (!provider || (provider !== 'none' && !isAnalysisProvider(provider)))
           throw new Error('Agent must be none, codex, claude, deepseek or openai');
         const current: NonNullable<typeof config.aiStages> = config.aiStages ?? {};
         current[stage as keyof typeof current] = {
@@ -210,7 +210,7 @@ async function main() {
         config.aiStages?.montage?.provider ??
         config.aiStages?.filmDirection?.provider ??
         config.agent.provider;
-      if (provider !== 'codex' && provider !== 'claude' && provider !== 'deepseek' && provider !== 'openai')
+      if (!isAnalysisProvider(provider))
         throw new Error('Choose Codex, Claude or DeepSeek');
       const db = new Store(root);
       try {
@@ -247,7 +247,7 @@ async function main() {
       if (args[0] === 'test') {
         const config = await loadConfig(root);
         const provider = args[1] ?? config.agent.provider;
-        if (provider !== 'codex' && provider !== 'claude' && provider !== 'deepseek' && provider !== 'openai')
+        if (!isAnalysisProvider(provider))
           throw new Error('Select Codex, Claude or DeepSeek for a real connection test');
         console.log(`Calling ${provider} (this consumes agent quota)...`);
         const result = await smokeTestAgent(root, provider, config.agent.model);
@@ -257,7 +257,7 @@ async function main() {
       }
       const config = await loadConfig(root);
       if (args[0]) {
-        if (!['none', 'codex', 'claude', 'cursor', 'deepseek', 'openai'].includes(args[0]))
+        if (!isKnownProvider(args[0]))
           throw new Error('Agent must be none|codex|claude|cursor|deepseek|openai');
         config.agent.provider = args[0] as typeof config.agent.provider;
         await writeFile(
@@ -358,7 +358,7 @@ async function main() {
     }
     case 'analyze': {
       const input = path.resolve(
-        args[0] && !['codex', 'claude', 'cursor', 'deepseek', 'openai'].includes(args[0])
+        args[0] && !isAnalysisProvider(args[0])
           ? args[0]
           : path.join(root, (await loadConfig(root)).mediaDir),
       );

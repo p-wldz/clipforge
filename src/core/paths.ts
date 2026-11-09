@@ -3,8 +3,9 @@ import path from 'node:path';
 import { ensurePrompts } from '../agents/prompts.js';
 import { defaultPrices, validateCatalog, type PriceCatalog } from './usage.js';
 import { randomUUID, createHash } from 'node:crypto';
+import { isAnalysisProvider, isKnownProvider, type AnalysisProvider } from './providers.js';
 
-export type AgentProvider = 'none' | 'codex' | 'claude' | 'cursor' | 'deepseek' | 'openai';
+export type AgentProvider = 'none' | 'cursor' | AnalysisProvider;
 export type AiStage =
   | 'understanding'
   | 'contextualUnderstanding'
@@ -221,7 +222,7 @@ export async function loadConfig(root: string): Promise<Config> {
   const input = JSON.parse(file) as Partial<Config>;
   if (
     input.version !== 1 ||
-    !['none', 'codex', 'claude', 'cursor', 'deepseek', 'openai'].includes(input.agent?.provider ?? '')
+    !isKnownProvider(input.agent?.provider)
   )
     throw new Error(
       'Invalid config: expected version=1 and agent.provider=none|codex|claude|cursor|deepseek|openai',
@@ -298,7 +299,7 @@ export function validateAnalysis(a: Config['analysis']) {
 export async function saveConfig(root: string, config: Config) {
   if (
     config.version !== 1 ||
-    !['none', 'codex', 'claude', 'cursor', 'deepseek', 'openai'].includes(config.agent.provider)
+    !isKnownProvider(config.agent.provider)
   )
     throw new Error('Invalid provider');
   if (!['project', 'user'].includes(config.toolsScope ?? 'project'))
@@ -307,7 +308,7 @@ export async function saveConfig(root: string, config: Config) {
   if (config.pricing) config.pricing = validateCatalog(config.pricing);
   for (const stage of Object.values(config.aiStages ?? {})) {
     if (!stage) continue;
-    if (!['none', 'codex', 'claude', 'deepseek', 'openai'].includes(stage.provider))
+    if (stage.provider !== 'none' && !isAnalysisProvider(stage.provider))
       throw new Error('Unsupported AI stage provider');
     if (stage.model && (stage.model.length > 180 || /[\r\n]/.test(stage.model)))
       throw new Error('Invalid AI model identifier');

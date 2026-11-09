@@ -10,6 +10,7 @@
 - [x] Agent contexts/skills
 
 ## Next: quality and robustness
+- [x] Centralize supported provider names and authentication modes for CLI, server, and pipeline validation
 - [x] Deep Action Analysis, contextual editing, and a bounded optional critical review pass with inspectable artifacts
 - [ ] Add scene change, volume peaks, speech windows, and event-based candidate generation
 - [ ] Add native Whisper/faster-whisper/whisper.cpp adapters and diarization

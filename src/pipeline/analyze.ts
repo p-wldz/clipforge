@@ -3,6 +3,7 @@ import { readFile, readdir, rm } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { Store, type Highlight } from '../core/db.js';
 import { stableId, artifactDir, loadConfig, newId } from '../core/paths.js';
+import { isAnalysisProvider } from '../core/providers.js';
 import { probe, frames, audioEvents, saveJson } from './media.js';
 import { candidates } from './highlights.js';
 import { classifySound } from './sound-classifier.js';
@@ -368,7 +369,7 @@ export async function analyze(
           const editingProfile = options.provider
             ? { provider: options.provider, model: config.agent.model }
             : profileFor(config, 'editing');
-          if (!['codex', 'claude', 'deepseek', 'openai'].includes(editingProfile.provider)) {
+          if (!isAnalysisProvider(editingProfile.provider)) {
             event(
               'editing',
               `${name}: editing provider disabled; base understanding remains available`,
@@ -380,7 +381,7 @@ export async function analyze(
             event('editing', `${name}: selecting highlights for editing context`, id, 'info', name);
           try {
             if (!deepAction) throw new Error('Deep Action Analysis is unavailable');
-            if (!['codex', 'claude', 'deepseek', 'openai'].includes(editingProfile.provider))
+            if (!isAnalysisProvider(editingProfile.provider))
               throw new Error('Editing provider is disabled');
             event(
               'editing',
