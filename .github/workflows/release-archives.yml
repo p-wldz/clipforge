@@ -32,9 +32,28 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: Compress-Archive -Path release\* -DestinationPath release\${{ github.ref_name }}-Windows-${{ runner.arch }}.zip
-      - name: SHA-256 checksums
-        shell: bash
-        run: cd release && (sha256sum *.tar.gz *.zip 2>/dev/null || shasum -a 256 *.tar.gz *.zip) > SHA256SUMS
+      - name: Upload platform archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: portable-${{ runner.os }}-${{ runner.arch }}
+          path: |
+            release/*.tar.gz
+            release/*.zip
+          if-no-files-found: error
+
+  publish:
+    name: Publish release assets
+    needs: archive
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download platform archives
+        uses: actions/download-artifact@v4
+        with:
+          pattern: portable-*
+          merge-multiple: true
+          path: release
+      - name: Create shared SHA-256 checksums
+        run: cd release && sha256sum *.tar.gz *.zip > SHA256SUMS
       - uses: softprops/action-gh-release@v2
         with:
           files: |

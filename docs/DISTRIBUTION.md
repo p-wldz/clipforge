@@ -79,7 +79,9 @@ models, and AI credentials remain user-managed external dependencies.
   runtime, a small `clipforge`/`clipforge.cmd` launcher, and the README; the
   workflow publishes SHA-256 checksums. The archive does not install FFmpeg,
   Python, models, or an AI provider. It smoke-tests the packaged launcher before
-  publishing any release asset.
+  publishing any release asset. Platform jobs upload build artifacts only; one
+  dependent publish job generates the single combined `SHA256SUMS` file and
+  attaches every asset, avoiding concurrent release-asset updates.
 
 ## Non-goals for the first publication
 
