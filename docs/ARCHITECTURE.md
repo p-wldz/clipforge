@@ -15,7 +15,7 @@ Dashboard HTTP ───┘          │
 
 ## Pipeline
 1. `probe`: metadata from `ffprobe`; rejects files without video.
-2. `frames`: up to 30 cached JPEGs at configurable spacing.
+2. `frames`: up to 30 cached JPEGs spread evenly across the full source duration, with timestamps. The agent receives a bounded, timestamped selection that preserves clip endpoints, event-adjacent evidence, and coverage of long quiet spans.
 3. `audioEvents`: `silencedetect` inverted into active intervals. This does not mean a kill or highlight.
 4. `transcribe`: optional provider configured as process command + argv templates. Default is off.
 5. `candidates`: interval deduplication and bounded windows, marked `pending_review`.
@@ -25,7 +25,7 @@ Dashboard HTTP ───┘          │
 
 ## Staged AI workflow
 
-When AI is explicitly enabled, Clipforge runs a bounded three-stage workflow. **Deep Action Analysis** creates a reusable, timestamped account of complete actions (setup through reaction), evidence and uncertainty in `artifacts/<clip-id>/understanding/deep-action.json`; its cache key excludes creative context. **Contextual Editing** evaluates every action against the project editing brief and may select none. An optional single **Critical Review** pass adjusts only evidence-supported boundaries and writes both original and corrected proposals; unclear corrections are recorded as selective-reanalysis ranges. Existing `clip_analyses` and `highlights` remain compatible, and editing sets remain context-keyed.
+When AI is explicitly enabled, Clipforge runs a bounded three-stage workflow. **Deep Action Analysis** creates a reusable, timestamped account of complete actions (necessary setup through outcome and reaction), evidence and uncertainty in `artifacts/<clip-id>/understanding/deep-action.json`; its cache key excludes creative context. **Contextual Editing** evaluates every action against the project editing brief and may select none. Included actions retain their observed beginning and outcome/reaction, so a short climax cannot silently replace the story that makes it meaningful; unimportant movement may instead be proposed for acceleration. An optional single **Critical Review** pass adjusts only evidence-supported boundaries and writes both original and corrected proposals; unclear corrections are recorded as selective-reanalysis ranges. Existing `clip_analyses` and `highlights` remain compatible, and editing sets remain context-keyed.
 
 Before Deep Action Analysis, an opt-in **Conversation Understanding** call groups existing timestamped transcript segments into context-independent conversations in `artifacts/<clip-id>/understanding/conversations.json`. It can reference only supplied stable utterance (`utt-*`) and media-event IDs, validates all timestamps, stores confidence and uncertainty, and never rewrites the Whisper transcript. Its cache key covers the prompt, provider, transcript, and local media events. Deep Action Analysis and contextual editing receive this artifact, allowing dialogue-led highlights to retain setup, answers, payoff, and reactions even where visual activity is low.
 

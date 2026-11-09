@@ -7,6 +7,10 @@ export interface Metadata {
   height: number;
   hasAudio: boolean;
 }
+export interface FrameSample {
+  path: string;
+  timestamp: number;
+}
 export async function probe(file: string, signal?: AbortSignal): Promise<Metadata> {
   const { stdout } = await run(
     'ffprobe',
@@ -35,11 +39,19 @@ export async function frames(
   signal?: AbortSignal,
 ) {
   await mkdir(targetDir, { recursive: true });
-  const count = Math.min(30, Math.ceil(duration / interval));
-  const results: string[] = [];
+  // Keep a bounded artifact count while covering the entire source. Using the
+  // requested interval for only the first 30 samples leaves a long ending unseen.
+  const count = Math.min(30, Math.max(1, Math.ceil(duration / interval)));
+  const sampleInterval = duration / count;
+  const results: FrameSample[] = [];
   for (let i = 0; i < count; i++) {
-    const t = Math.min(duration - 0.01, (i + 0.5) * interval);
-    const output = path.join(targetDir, `frame-${String(i).padStart(3, '0')}-${maxWidth}.jpg`);
+    const t = Math.min(duration - 0.01, (i + 0.5) * sampleInterval);
+    // Timestamp is part of the cache identity: a change in sampling coverage
+    // must never relabel a previously cached image as a later moment.
+    const output = path.join(
+      targetDir,
+      `frame-${String(i).padStart(3, '0')}-${Math.round(t * 1000)}ms-${maxWidth}.jpg`,
+    );
     try {
       await readFile(output);
     } catch {
@@ -65,7 +77,7 @@ export async function frames(
         { timeoutMs: 60000, signal },
       );
     }
-    results.push(output);
+    results.push({ path: output, timestamp: t });
   }
   return results;
 }

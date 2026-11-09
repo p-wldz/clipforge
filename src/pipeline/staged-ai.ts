@@ -585,6 +585,7 @@ export function parseContextualEditing(
   const raw = json(text);
   if (!Array.isArray(raw.candidates)) throw new Error('Contextual Editing requires candidates');
   const ids = new Set(actions.map((a) => a.id));
+  const actionById = new Map(actions.map((action) => [action.id, action]));
   const decisions = raw.candidates.flatMap((value): EditingDecision[] => {
     if (!value || typeof value !== 'object') return [];
     const v = value as Record<string, unknown>;
@@ -609,12 +610,20 @@ export function parseContextualEditing(
             : [];
         })
       : [];
+    const action = actionById.get(v.actionId)!;
+    // A selected Deep Action is a complete story unit. Keep its observed setup
+    // and outcome/reaction; optional acceleration can handle dull traversal.
+    const completeStart = action.phases.beginning?.start ?? action.start;
+    const completeEnd =
+      action.phases.reaction?.end ?? action.phases.resolution?.end ?? action.end;
+    const completeStartBound = v.include ? Math.min(start, completeStart) : start;
+    const completeEndBound = v.include ? Math.max(end, completeEnd) : end;
     return [
       {
         actionId: v.actionId,
         include: v.include,
-        start,
-        end: Math.min(end, duration),
+        start: completeStartBound,
+        end: Math.min(completeEndBound, duration),
         title: typeof v.title === 'string' ? v.title.slice(0, 120) : 'Untitled action',
         description: typeof v.description === 'string' ? v.description.slice(0, 1200) : '',
         reason: typeof v.reason === 'string' ? v.reason.slice(0, 1600) : '',
@@ -671,9 +680,11 @@ export async function contextualEditing(
   if (!['codex', 'claude', 'deepseek', 'openai'].includes(profile.provider))
     throw new Error('Contextual Editing requires a configured AI provider');
   const prompt = await getPrompt(root, 'contextual-editing');
+  const boundaryGuidance = await getPrompt(root, 'editing-boundary-refinement');
   const key = hash({
     stage: 'contextual-editing-v1',
     prompt,
+    boundaryGuidance,
     profile,
     context: input.context,
     understanding: input.understanding,
@@ -689,7 +700,7 @@ export async function contextualEditing(
   await mkdir(folder, { recursive: true });
   const file = path.join(folder, 'contextual-editing.json'),
     output = path.join(folder, 'contextual-editing-response.txt');
-  const request = `${prompt}\n\nReturn ONLY JSON: {candidates:[{actionId,include,start,end,title,description,reason,accelerate:[{start,end,speed}],overlaps:string[],confidence,conversationId?,narrativePhaseCoverage:string[],missingContextRisks:string[]}]}. Include one decision for every action; excluded actions still require actionId, include:false, reason and confidence.\n\nEDITING CONTEXT:\n${input.context}\n\nDEEP ACTION ANALYSIS:\n${JSON.stringify(input.understanding)}`;
+  const request = `${prompt}\n\nBOUNDARY SAFEGUARD:\n${boundaryGuidance}\n\nReturn ONLY JSON: {candidates:[{actionId,include,start,end,title,description,reason,accelerate:[{start,end,speed}],overlaps:string[],confidence,conversationId?,narrativePhaseCoverage:string[],missingContextRisks:string[]}]}. Include one decision for every action; excluded actions still require actionId, include:false, reason and confidence. For an included action, start at or before its observed beginning and end at or after its observed resolution or reaction. If the action is not worthwhile with its necessary context, exclude it rather than submitting a contextless fragment.\n\nEDITING CONTEXT:\n${input.context}\n\nDEEP ACTION ANALYSIS:\n${JSON.stringify(input.understanding)}`;
   await writeFile(path.join(folder, 'contextual-editing-prompt.txt'), request);
   try {
     const response = await runAgentText(

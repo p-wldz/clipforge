@@ -15,6 +15,8 @@
 
 Highlight `status`: `pending_review | approved | rejected`. `origin`: `heuristic | codex | claude`. Time units are seconds, start inclusive, end exclusive. Scores 0–100; heuristic score 50 represents an unverified candidate.
 
+For AI-derived highlights, an included Deep Action's saved interval must include its observed `beginning` phase and its `reaction` phase when present (otherwise its `resolution`, otherwise the action end). This is a non-destructive narrative-completeness guard; acceleration remains an editorial proposal, not an alteration of source media.
+
 ## HTTP API
 - `GET /api/clips`
 - `GET /api/highlights`

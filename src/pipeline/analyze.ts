@@ -190,7 +190,7 @@ export async function analyze(
           'info',
           name,
         );
-        const pics = await frames(
+        const frameSamples = await frames(
           full,
           path.join(folder, 'frames'),
           config.analysis.frameIntervalSeconds,
@@ -198,6 +198,7 @@ export async function analyze(
           config.analysis.imageMaxWidth ?? 640,
           options.signal,
         );
+        const pics = frameSamples.map((sample) => sample.path);
         db.upsertClip({
           id,
           source_path: full,
@@ -256,6 +257,17 @@ export async function analyze(
             max,
             [...classified, ...audioSignals.events, ...segments],
           );
+          const selectedFrameTimestamps = new Map(
+            frameSamples.map((sample) => [sample.path, sample.timestamp]),
+          );
+          agentPayload.frameSampling = {
+            requestedEverySeconds: config.analysis.frameIntervalSeconds,
+            extractedFrames: frameSamples.length,
+            selectedFrames: selection.map((frame) => ({
+              path: frame,
+              timestamp: selectedFrameTimestamps.get(frame),
+            })),
+          };
           let conversation;
           if (segments.length) {
             event(

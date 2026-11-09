@@ -148,10 +148,39 @@ test('deep action analysis preserves complete actions and contextual editing dec
     deep.actions,
   );
   assert.equal(decisions[0].start, 0);
+  assert.equal(decisions[0].end, 20);
   assert.throws(
     () => parseContextualEditing(JSON.stringify({ candidates: [] }), 20, deep.actions),
     /every Deep Action/,
   );
+});
+test('contextual editing expands a selected action to its observed setup and reaction', () => {
+  const action = {
+    id: 'a1',
+    start: 5,
+    end: 18,
+    whatHappens: 'A setup ends in a reaction.',
+    phases: {
+      beginning: { start: 5, end: 7, description: 'Setup' },
+      climax: { start: 11, end: 12, description: 'Payoff' },
+      reaction: { start: 12, end: 18, description: 'Reaction' },
+    },
+    evidence: [],
+    uncertainty: [],
+  };
+  const decisions = parseContextualEditing(
+    JSON.stringify({
+      candidates: [
+        {
+          actionId: 'a1', include: true, start: 10, end: 13, title: 'Too short',
+          description: '', reason: '', accelerate: [], overlaps: [], confidence: 0.8,
+        },
+      ],
+    }),
+    20,
+    [action],
+  );
+  assert.deepEqual([decisions[0].start, decisions[0].end], [5, 18]);
 });
 test('forced re-analysis removes saved derived-set references before pending highlights', async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), 'clipforge-force-'));

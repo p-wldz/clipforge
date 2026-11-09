@@ -19,6 +19,8 @@
 5. Choose `clipforge analyze --agent codex` (or `--agent claude`), or omit `--agent` for local heuristic analysis.
 6. Review candidates in `clipforge dashboard`, adjust times, approve, and render.
 
+New workspaces have no maximum clip duration by default: every eligible recording is probed and analyzed. Set `analysis.maxDurationSeconds` only when deliberately limiting processing. AI analysis uses timestamped screenshots across each full clip and favors complete setup-to-reaction sequences over isolated peaks.
+
 ## Current restrictions
 
 - `cursor` is detected as a CLI, but its **analysis adapter is not implemented**.
