@@ -23,6 +23,11 @@ test('AI stage profiles preserve legacy agent and expose API model scan', async 
     let data = await res.json();
     assert.ok(data.providers.codex);
     assert.equal(data.stages.clipAnalysis.provider, 'none');
+    res = await fetch(base + '/api/ai/providers');
+    assert.equal(res.status, 200);
+    const providers = await res.json();
+    assert.equal(providers.find((provider) => provider.id === 'anthropic').environment, 'ANTHROPIC_API_KEY');
+    assert.equal(providers.find((provider) => provider.id === 'codex').auth, 'installed-client');
     res = await fetch(base + '/api/ai/stages', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },

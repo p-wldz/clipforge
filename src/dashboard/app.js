@@ -10,8 +10,10 @@ $('#analysis-provider').closest('label').after(providerHelp);
 let providerHints = {
   none: 'Local analysis only. No frames, video, audio, or transcripts leave this computer.',
 };
+let providerChoices = [];
 async function loadProviderChoices() {
   const choices = await api('/api/ai/providers');
+  providerChoices = choices;
   const select = $('#analysis-provider'), selected = select.value;
   select.innerHTML = '<option value="none">No AI</option>' + choices.map((choice) => `<option value="${choice.id}">${choice.label}</option>`).join('');
   select.value = selected;
@@ -1131,13 +1133,16 @@ async function loadInventory() {
     )
     .join('');
   const stages = inventory.stages;
+  const stageProviders = providerChoices.length
+    ? providerChoices
+    : Object.keys(inventory.providers).filter((id) => id !== 'cursor').map((id) => ({ id, label: id }));
   $('#stage-config').innerHTML = [
     ['clipAnalysis', 'Clip analysis'],
     ['montage', 'Movie suggestion'],
   ]
     .map(
       ([id, label]) =>
-        `<div><label>${label} agent<select id="agent-${id}">${['none', 'codex', 'claude', 'deepseek', 'openai', 'anthropic'].map((p) => `<option value="${p}" ${stages[id].provider === p ? 'selected' : ''}>${p}</option>`).join('')}</select></label></div><div><label>${label} model<select id="model-${id}">${modelOptions(stages[id].provider, stages[id].model || '')}</select></label></div>`,
+        `<div><label>${label} agent<select id="agent-${id}"><option value="none">No AI</option>${stageProviders.map((provider) => `<option value="${provider.id}" ${stages[id].provider === provider.id ? 'selected' : ''}>${safe(provider.label)}</option>`).join('')}</select></label></div><div><label>${label} model<select id="model-${id}">${modelOptions(stages[id].provider, stages[id].model || '')}</select></label></div>`,
     )
     .join('');
 }
