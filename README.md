@@ -75,6 +75,18 @@ An AI call can transmit selected frames and analysis metadata to that provider a
 clipforge ai test understanding
 ```
 
+### DeepSeek API credentials
+
+DeepSeek uses `DEEPSEEK_API_KEY`; the key is never stored in the workspace configuration. Put it in a private file outside the video project (copy [`.env.example`](.env.example) as a starting point), then explicitly load it for the command:
+
+```sh
+clipforge --env-file /secure/path/clipforge.env agent test deepseek
+clipforge --env-file /secure/path/clipforge.env ai set clip deepseek
+clipforge --env-file /secure/path/clipforge.env analyze --agent deepseek
+```
+
+The command reports only the number of variables loaded, never their values. Existing environment variables take precedence, which keeps CI and shell-injected secrets authoritative. Open **AI adapters** in the dashboard to choose a discovered model, then run its connection test before analyzing media.
+
 ## What Clipforge does
 
 1. **Media analysis** probes the video, samples frames, records audio activity, and optionally runs local transcription or sound classification.
@@ -97,7 +109,7 @@ Changing an editing or film-direction context does not invalidate media analysis
 
 See [docs/CLI.md](docs/CLI.md) for terminal-first workflows, examples, and safety notes.
 
-Every command accepts `--root <workspace-path>` before the command. Without it, Clipforge uses the current directory.
+Every command accepts `--root <workspace-path>` before the command. Without it, Clipforge uses the current directory. `--env-file <path>` explicitly loads credentials from a dotenv-style file without writing secrets into the project.
 
 | Command | Description | Options |
 | --- | --- | --- |

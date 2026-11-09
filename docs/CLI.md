@@ -9,7 +9,7 @@ clipforge help
 clipforge --root /path/to/project doctor
 ```
 
-`--root <workspace>` selects a project workspace. If omitted, the current directory is used. Run `init` before every command other than `help` or `init`.
+`--root <workspace>` selects a project workspace. If omitted, the current directory is used. `--env-file <path>` explicitly loads a dotenv-style credentials file; Clipforge never copies that file or its values into the workspace. Run `init` before every command other than `help` or `init`.
 
 ## Quick local workflow
 
@@ -79,6 +79,17 @@ clipforge --root ./my-highlights agents
 clipforge --root ./my-highlights agent test codex
 clipforge --root ./my-highlights analyze --agent codex
 ```
+
+### Configure DeepSeek without storing a key in the project
+
+```sh
+# Keep this file outside ./my-highlights and do not commit it.
+printf 'DEEPSEEK_API_KEY=your-key-here\n' > /secure/clipforge.env
+clipforge --env-file /secure/clipforge.env --root ./my-highlights agent test deepseek
+clipforge --env-file /secure/clipforge.env --root ./my-highlights analyze --agent deepseek
+```
+
+The file supports `NAME=value`, quoted values, comments, and an optional `export` prefix. A value already set in the shell or CI is never overwritten.
 
 ### Review an analysis failure
 

@@ -18,6 +18,7 @@ import { smokeTestAgent } from './agents/smoke.js';
 import { suggestFilm, latestFilmProposal } from './agents/montage.js';
 import { contexts } from './pipeline/staged-ai.js';
 import { dashboardStatus, type DashboardRun } from './core/dashboard-status.js';
+import { loadEnvironmentFile } from './core/environment.js';
 const usage = `clipforge-local - local-first gameplay highlights\n\nCommands:\n  init [folder] [--interactive]         Initialize workspace (project questions)\n  doctor [--json]                      Check installed tools (no LLM)\n  setup [--interactive] [--transcription] [--sound-classifier] [--device cpu|cuda|auto] [--scope project|user] [--dry-run] [--yes]  Install missing dependencies with consent\n  usage [run-id]                       Reported token usage, billing observations and optional pricing estimates\n  ai models                            Discover provider model catalogs (access test still required)
   ai set <understanding|contextual|editing|critical|direction|clip|montage> <codex|claude|deepseek|none> [model-id]  Choose agent and model for a stage
   ai test <understanding|contextual|editing|critical|direction|clip|montage>  Make a real model call for a configured stage
@@ -38,6 +39,7 @@ function takeOption(name: string) {
   return value;
 }
 const root = path.resolve(takeOption('--root') ?? process.cwd());
+const envFile = takeOption('--env-file');
 const initName = takeOption('--name');
 const initDescription = takeOption('--description');
 const initFocus = takeOption('--focus');
@@ -61,6 +63,12 @@ if (agentChoice) raw.splice(agentIndex + 1, 1);
 const flags = new Set(raw.filter((s) => s.startsWith('--')));
 const args = raw.filter((x) => !x.startsWith('--'));
 async function main() {
+  if (envFile) {
+    const result = await loadEnvironmentFile(envFile);
+    console.error(
+      `Loaded ${result.loaded} credential variable${result.loaded === 1 ? '' : 's'} from ${result.file}`,
+    );
+  }
   if (cmd === 'init') {
     const destination = path.resolve(args[0] ?? root);
     const wizard = flags.has('--interactive') ? await initWizard(path.basename(destination)) : {};
@@ -93,7 +101,12 @@ async function main() {
     return;
   }
   if (!cmd || cmd === 'help' || cmd === '--help') {
-    console.log(usage);
+    console.log(
+      usage.replace(
+        'Global option: --root <workspace path>',
+        'Global options: --root <workspace path>  --env-file <credentials file>',
+      ),
+    );
     return;
   }
   if (!existsSync(workspaceDir(root)))

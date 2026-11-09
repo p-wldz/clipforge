@@ -2,6 +2,9 @@ node_modules/
 dist/
 .clipforge/
 *.log
+.env
+.env.*
+!.env.example
 .DS_Store
 
 tools/__pycache__
