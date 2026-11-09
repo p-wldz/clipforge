@@ -64,6 +64,8 @@ models, and AI credentials remain user-managed external dependencies.
    packaging supports unattended installation and upgrades. Validate the manifest
    before submission and expect community-repository review.
 
+See [RELEASING.md](RELEASING.md) for the executable pre-tag and post-publication checklist.
+
 ## Implemented publication guardrails
 
 - `.github/workflows/ci.yml` runs the full verification command on Ubuntu, Windows,

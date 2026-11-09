@@ -4,6 +4,10 @@ on:
   push:
     tags: ['v*']
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
 permissions:
   contents: read
   id-token: write
@@ -18,4 +22,5 @@ jobs:
           node-version: 22.13.0
           registry-url: https://registry.npmjs.org
       - run: npm ci
+      - run: npm run release:version:check
       - run: npm publish --provenance
