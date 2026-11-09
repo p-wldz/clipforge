@@ -34,6 +34,15 @@ the CLI installation from optional local media tooling and explicitly explain th
 `doctor` makes no changes. Setup remains an explicit action, in line with the
 project's local-first contract.
 
+## Portable archive layout
+
+Each tagged archive contains one versioned directory with `dist/`, a matching Node
+runtime, `README.md`, and a `clipforge` launcher on macOS/Linux or `clipforge.cmd`
+on Windows. Add that directory to `PATH`; no global npm installation is needed.
+Verify the downloaded archive against the `SHA256SUMS` asset before extracting it.
+The bundled runtime executes only Clipforge; FFmpeg, FFprobe, Python, optional
+models, and AI credentials remain user-managed external dependencies.
+
 ## Release engineering requirements
 
 1. Make a release workflow that builds and tests the npm tarball plus every binary
