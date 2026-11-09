@@ -447,7 +447,7 @@ export function startServer(root: string, port: number, host = '127.0.0.1'): Das
           config.aiStages?.montage?.provider ??
           config.agent.provider;
         if (!isAnalysisProvider(provider))
-          throw new Error('Configure a Codex, Claude or DeepSeek movie suggestion provider first');
+          throw new Error('Configure a supported AI movie suggestion provider first');
         const items = db.highlights().filter((h) => h.status !== 'rejected');
         if (!items.length) throw new Error('No highlight candidates. Analyze clips first.');
         const summaries = db.clipAnalyses().filter((r: any) => r.status === 'success');
@@ -654,7 +654,7 @@ export function startServer(root: string, port: number, host = '127.0.0.1'): Das
         const profile = config.aiStages?.[stage] ?? config.agent;
         const provider = input.provider ?? profile.provider;
         if (!isAnalysisProvider(provider))
-          throw new Error('Select codex, claude, deepseek or openai');
+          throw new Error('Select a supported AI provider');
         // Explicit action only, never called by polling.
         const result = await smokeTestAgent(
           root,

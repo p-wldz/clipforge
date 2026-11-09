@@ -27,7 +27,7 @@ export async function analyze(
   options: {
     withAgent: boolean;
     force: boolean;
-    provider?: 'codex' | 'claude' | 'cursor' | 'deepseek' | 'openai';
+    provider?: 'codex' | 'claude' | 'cursor' | 'deepseek' | 'openai' | 'anthropic';
     signal?: AbortSignal;
   },
   onProgress: (line: string) => void = console.log,
@@ -40,7 +40,7 @@ export async function analyze(
     throw new Error('No agent selected. Run clipforge agent codex or use --agent codex');
   if (provider === 'cursor')
     throw new Error(
-      'Cursor analysis adapter is not implemented. Choose codex, claude, deepseek or openai.',
+      'Cursor analysis adapter is not implemented. Choose a supported AI provider.',
     );
   const db = new Store(root),
     runId = newId();
@@ -519,7 +519,7 @@ export async function analyze(
             'skipped',
             null,
             null,
-            'Agent analysis not requested. Use --agent codex, claude, deepseek or openai',
+            'Agent analysis not requested. Use --agent followed by a supported AI provider.',
           );
           event('llm', `${name}: SKIPPED (no --agent flag)`, id, 'warn', name);
         }
@@ -558,11 +558,7 @@ export async function analyze(
     }
     const montageProvider =
       config.aiStages?.filmDirection?.provider ?? config.aiStages?.montage?.provider ?? provider;
-    if (
-      montageProvider === 'codex' ||
-      montageProvider === 'claude' ||
-      montageProvider === 'deepseek'
-    ) {
+    if (isAnalysisProvider(montageProvider)) {
       event('montage', `Preparing AI proposal for the final movie`);
       try {
         const candidates = db.highlights().filter((h) => h.status !== 'rejected');

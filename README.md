@@ -8,7 +8,7 @@ It is a review tool, not a reliable game-event detector. Audio activity and Audi
 
 - Node.js 22.13 or newer
 - FFmpeg and FFprobe on `PATH` for analysis and rendering
-- Optional: authenticated Codex, Claude Code, or DeepSeek configuration for AI stages
+- Optional: an installed Codex/Claude client or an explicit DeepSeek, OpenAI, or Anthropic API key for AI stages
 - Optional: Python 3 for local transcription and sound classification
 
 From a checkout of this repository:
@@ -93,7 +93,7 @@ OpenAI and Anthropic API adapters work the same way with `OPENAI_API_KEY` or `AN
 | --- | --- | --- |
 | `none` | None | Fully local candidate analysis. |
 | `codex` / `claude` | Installed, signed-in OS client | Uses that client’s account and configuration; no API key is saved by Clipforge. |
-| `deepseek` / `openai` | Explicit environment variable | Uses `DEEPSEEK_API_KEY` or `OPENAI_API_KEY` from the current terminal or `--env-file`. |
+| `deepseek` / `openai` / `anthropic` | Explicit environment variable | Uses `DEEPSEEK_API_KEY`, `OPENAI_API_KEY`, or `ANTHROPIC_API_KEY` from the current terminal or `--env-file`. |
 
 An installed client and an API key are deliberately separate choices. Clipforge does not silently switch between them.
 
@@ -126,15 +126,15 @@ Every command accepts `--root <workspace-path>` before the command. Without it, 
 | `init [folder]` | Create a local project. | `--interactive`, `--name <name>`, `--description <text>`, `--focus <text>`, `--clips-dir <folder>`, `--frame-interval <seconds>`, `--audio <yes\|no>`, `--transcription <yes\|no>`, `--min-duration <seconds>`, `--max-duration <seconds>` (`0` means unlimited), `--require-audio <yes\|no>` |
 | `doctor` | Check available dependencies; no installation or AI invocation. | `--json` |
 | `setup` | Plan or explicitly install optional local transcription/classification dependencies. | `--interactive`, `--transcription`, `--sound-classifier`, `--device <cpu\|cuda\|auto>`, `--scope <project\|user>`, `--dry-run`, `--yes` |
-| `analyze [file\|folder]` | Run local analysis. | `--agent [codex\|claude\|cursor\|deepseek]`, `--force` |
+| `analyze [file\|folder]` | Run local analysis. | `--agent [codex\|claude\|cursor\|deepseek\|openai\|anthropic]`, `--force` |
 | `dashboard` | Start the local dashboard. | `--port <1024-65535>` |
 | `agents` | Detect installed provider CLIs. | — |
-| `agent [provider]` | Show or set the legacy default provider. | `none`, `codex`, `claude`, `cursor`, or `deepseek`; `agent test [provider]` makes a real call |
+| `agent [provider]` | Show or set the legacy default provider. | `none`, `codex`, `claude`, `cursor`, `deepseek`, `openai`, or `anthropic`; `agent test [provider]` makes a real call |
 | `ai models` | Discover provider model IDs. Discovery does not verify access. | — |
 | `ai set <stage> <provider> [model]` | Set a provider/model for a stage. | Stages: `understanding`, `contextual`, `editing`, `critical`, `direction`; compatibility aliases: `clip`, `montage` |
 | `ai test <stage>` | Make a real provider connection test for a configured stage. | Same stages as `ai set` |
 | `prompts` | List editable project prompt files. | `show <name>` prints one prompt |
-| `suggest [provider]` | Generate an editable film proposal from stored highlights. | Provider: `codex`, `claude`, or `deepseek` |
+| `suggest [provider]` | Generate an editable film proposal from stored highlights. | Any supported analysis provider |
 | `highlights` | List candidate highlights. | `--json` |
 | `approve <id>` / `reject <id>` | Change candidate review status. | — |
 | `project <name>` | Create a project from approved highlights. | — |

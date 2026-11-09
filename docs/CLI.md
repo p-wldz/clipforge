@@ -41,16 +41,16 @@ clipforge --root ./my-highlights render <project-id>
 | `init [folder]` | Creates a local workspace. | Supports `--interactive`, `--name`, `--description`, `--focus`, `--clips-dir`, `--frame-interval`, `--audio`, `--transcription`, `--min-duration`, `--max-duration`, and `--require-audio`. |
 | `doctor [--json]` | Checks local tooling and configuration. | Read-only: never installs software or invokes an AI. |
 | `setup` | Previews or installs optional transcription and sound-classifier tooling. | `clipforge setup --transcription --sound-classifier --dry-run`; use `--yes` only after reviewing the plan. Supports `--interactive`, `--device cpu\|cuda\|auto`, and `--scope project\|user`. |
-| `analyze [file\|folder]` | Runs local candidate analysis. | `clipforge analyze`; `--force` reprocesses eligible clips while retaining approved/rejected highlights. Add `--agent codex`, `--agent claude`, or `--agent deepseek` only for an explicit AI run. |
+| `analyze [file\|folder]` | Runs local candidate analysis. | `clipforge analyze`; `--force` reprocesses eligible clips while retaining approved/rejected highlights. Add any supported `--agent` provider only for an explicit AI run. |
 | `dashboard [--port 4173]` | Runs the local web UI at `127.0.0.1`. | Shows a one-line terminal status. Ctrl+C stops dashboard-owned analysis and closes the server. |
 | `agents` | Lists detected provider CLIs. | Detection does not prove sign-in or model access. |
-| `agent [provider]` | Shows or sets the legacy default provider. | Providers: `none`, `codex`, `claude`, `cursor`, `deepseek`. `cursor` is detectable but cannot analyze clips. |
+| `agent [provider]` | Shows or sets the legacy default provider. | Providers: `none`, `codex`, `claude`, `cursor`, `deepseek`, `openai`, `anthropic`. `cursor` is detectable but cannot analyze clips. |
 | `agent test [provider]` | Makes a real provider connection test. | Can consume provider quota. |
 | `ai models` | Discovers available provider model IDs. | A model list is not an authorization guarantee. |
 | `ai set <stage> <provider> [model]` | Sets a provider/model for an AI stage. | Stages: `understanding`, `contextual`, `editing`, `critical`, `direction`; aliases: `clip`, `montage`. |
 | `ai test <stage>` | Makes a real connection test for the stage profile. | Can consume provider quota. |
 | `prompts` | Lists project-local editable prompt paths. | `clipforge prompts show montage` prints one prompt. |
-| `suggest [provider]` | Produces an editable AI film proposal from stored highlights. | Explicit AI call; choose `codex`, `claude`, or `deepseek`. It does not render or approve anything. |
+| `suggest [provider]` | Produces an editable AI film proposal from stored highlights. | Explicit AI call; choose a supported analysis provider. It does not render or approve anything. |
 | `highlights [--json]` | Lists highlight candidates and IDs. | Use the IDs with `approve` or `reject`. |
 | `approve <highlight-id>` | Marks one candidate approved. | Approval is required before `project` includes it. |
 | `reject <highlight-id>` | Marks one candidate rejected. | Does not alter the source video or analysis artifacts. |

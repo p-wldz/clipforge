@@ -20,13 +20,13 @@ import { contexts } from './pipeline/staged-ai.js';
 import { dashboardStatus, type DashboardRun } from './core/dashboard-status.js';
 import { loadEnvironmentFile } from './core/environment.js';
 const usage = `clipforge-local - local-first gameplay highlights\n\nCommands:\n  init [folder] [--interactive]         Initialize workspace (project questions)\n  doctor [--json]                      Check installed tools (no LLM)\n  setup [--interactive] [--transcription] [--sound-classifier] [--device cpu|cuda|auto] [--scope project|user] [--dry-run] [--yes]  Install missing dependencies with consent\n  usage [run-id]                       Reported token usage, billing observations and optional pricing estimates\n  ai models                            Discover provider model catalogs (access test still required)
-  ai set <understanding|contextual|editing|critical|direction|clip|montage> <codex|claude|deepseek|none> [model-id]  Choose agent and model for a stage
+  ai set <understanding|contextual|editing|critical|direction|clip|montage> <codex|claude|deepseek|openai|anthropic|none> [model-id]  Choose agent and model for a stage
   ai test <understanding|contextual|editing|critical|direction|clip|montage>  Make a real model call for a configured stage
   agents                               Detect installed agent CLIs
-  agent test [codex|claude|deepseek]             Real AI connection test (uses tokens)
+  agent test [codex|claude|deepseek|openai|anthropic] Real AI connection test (uses tokens)
   prompts [list|show <name>]            Inspect editable prompts
-  suggest [codex|claude|deepseek]                Generate final film proposal from saved analyses
-  agent [none|codex|claude|cursor|deepseek]     Show or change selected agent\n  analyze <file|folder> [--agent [codex|claude|cursor|deepseek]] [--force]  Analyze videos\n  search <phrase> [--json]             Search timestamped transcripts
+  suggest [codex|claude|deepseek|openai|anthropic] Generate final film proposal from saved analyses
+  agent [none|codex|claude|cursor|deepseek|openai|anthropic] Show or change selected agent\n  analyze <file|folder> [--agent [codex|claude|cursor|deepseek|openai|anthropic]] [--force]  Analyze videos\n  search <phrase> [--json]             Search timestamped transcripts
   skipped [--json]                     List skipped files and reasons
   runs [--json]                        Show recent analysis jobs and errors\n  logs <run-id>                        Show timestamped pipeline/LLM activity\n  highlights [--json]                  List highlight candidates\n  approve <highlight-id>               Mark candidate approved\n  reject <highlight-id>                Mark candidate rejected\n  project <name>                       Create project from approved highlights\n  projects                             List projects\n  render <project-id>                  Render approved project\n  dashboard [--port 4173]              Start local review UI\n\nGlobal option: --root <workspace path>\nConfig: .clipforge/config.json\n`;
 const raw = process.argv.slice(2);
@@ -136,10 +136,10 @@ async function main() {
       if (args[0] === 'set') {
         const provider = args[2];
         if (!provider || (provider !== 'none' && !isAnalysisProvider(provider)))
-          throw new Error('Agent must be none, codex, claude, deepseek or openai');
+          throw new Error('Agent must be none, codex, claude, deepseek, openai or anthropic');
         const current: NonNullable<typeof config.aiStages> = config.aiStages ?? {};
         current[stage as keyof typeof current] = {
-          provider: provider as 'none' | 'codex' | 'claude' | 'deepseek' | 'openai',
+          provider: provider as 'none' | 'codex' | 'claude' | 'deepseek' | 'openai' | 'anthropic',
           ...(args[3] ? { model: args[3] } : {}),
         };
         config.aiStages = current;
@@ -153,9 +153,9 @@ async function main() {
         if (
           profile.provider !== 'codex' &&
           profile.provider !== 'claude' &&
-          profile.provider !== 'deepseek' && profile.provider !== 'openai'
+          profile.provider !== 'deepseek' && profile.provider !== 'openai' && profile.provider !== 'anthropic'
         )
-          throw new Error('Stage requires Codex, Claude or DeepSeek');
+          throw new Error('Stage requires a supported AI provider');
         const result = await smokeTestAgent(root, profile.provider, profile.model);
         console.log(JSON.stringify(result, null, 2));
         if (result.status !== 'success') process.exitCode = 1;
@@ -211,7 +211,7 @@ async function main() {
         config.aiStages?.filmDirection?.provider ??
         config.agent.provider;
       if (!isAnalysisProvider(provider))
-        throw new Error('Choose Codex, Claude or DeepSeek');
+        throw new Error('Choose a supported AI provider');
       const db = new Store(root);
       try {
         const items = db.highlights().filter((h) => h.status !== 'rejected');
@@ -248,7 +248,7 @@ async function main() {
         const config = await loadConfig(root);
         const provider = args[1] ?? config.agent.provider;
         if (!isAnalysisProvider(provider))
-          throw new Error('Select Codex, Claude or DeepSeek for a real connection test');
+          throw new Error('Select a supported AI provider for a real connection test');
         console.log(`Calling ${provider} (this consumes agent quota)...`);
         const result = await smokeTestAgent(root, provider, config.agent.model);
         console.log(JSON.stringify(result, null, 2));
@@ -258,7 +258,7 @@ async function main() {
       const config = await loadConfig(root);
       if (args[0]) {
         if (!isKnownProvider(args[0]))
-          throw new Error('Agent must be none|codex|claude|cursor|deepseek|openai');
+          throw new Error('Agent must be none|codex|claude|cursor|deepseek|openai|anthropic');
         config.agent.provider = args[0] as typeof config.agent.provider;
         await writeFile(
           path.join(workspaceDir(root), 'config.json'),
