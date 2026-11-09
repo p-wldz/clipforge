@@ -24,6 +24,7 @@ jobs:
       - run: npm ci
       - run: npm run ci
       - run: npm run release:archive
+      - run: npm run release:archive:check
       - name: Archive (Unix)
         if: runner.os != 'Windows'
         run: tar -C release -czf ../release/${{ github.ref_name }}-${{ runner.os }}-${{ runner.arch }}.tar.gz clipforge-*

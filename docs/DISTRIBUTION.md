@@ -78,7 +78,8 @@ models, and AI credentials remain user-managed external dependencies.
   on the same tag. Each archive contains the compiled CLI, its matching Node
   runtime, a small `clipforge`/`clipforge.cmd` launcher, and the README; the
   workflow publishes SHA-256 checksums. The archive does not install FFmpeg,
-  Python, models, or an AI provider.
+  Python, models, or an AI provider. It smoke-tests the packaged launcher before
+  publishing any release asset.
 
 ## Non-goals for the first publication
 
