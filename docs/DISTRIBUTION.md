@@ -81,7 +81,8 @@ See [RELEASING.md](RELEASING.md) for the executable pre-tag and post-publication
   runtime, a small `clipforge`/`clipforge.cmd` launcher, and the README; the
   workflow publishes SHA-256 checksums. The archive does not install FFmpeg,
   Python, models, or an AI provider. It smoke-tests the packaged launcher with
-  `--help`, disposable workspace initialization, and `doctor --json` before
+  compression, fresh extraction, `--help`, disposable workspace initialization,
+  and `doctor --json` before
   publishing any release asset. Platform jobs upload build artifacts only; one
   dependent publish job generates the single combined `SHA256SUMS` file and
   attaches every asset, avoiding concurrent release-asset updates. Build jobs

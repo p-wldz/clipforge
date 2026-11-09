@@ -6,7 +6,15 @@ import { tmpdir } from 'node:os';
 const entries = await readdir('release', { withFileTypes: true });
 const folder = entries.find((entry) => entry.isDirectory() && entry.name.startsWith('clipforge-'))?.name;
 if (!folder) throw new Error('No portable archive directory found. Run npm run release:archive first.');
-const command = process.platform === 'win32' ? join('release', folder, 'clipforge.cmd') : join('release', folder, 'clipforge');
+const extraction = await mkdtemp(join(tmpdir(), 'clipforge-archive-extract-'));
+const archive = join(extraction, 'clipforge.tar.gz');
+const tar = (...args) => {
+  const result = spawnSync('tar', args, { encoding: 'utf8' });
+  if (result.status !== 0) throw new Error(`Archive command failed: ${result.stderr || result.stdout}`);
+};
+tar('-czf', archive, '-C', 'release', folder);
+tar('-xzf', archive, '-C', extraction);
+const command = process.platform === 'win32' ? join(extraction, folder, 'clipforge.cmd') : join(extraction, folder, 'clipforge');
 const invoke = (args) => {
   const result = spawnSync(command, args, { encoding: 'utf8', shell: process.platform === 'win32' });
   if (result.status !== 0) throw new Error(`Portable launcher smoke test failed: ${result.stderr || result.stdout}`);
@@ -20,5 +28,6 @@ try {
   JSON.parse(doctor);
 } finally {
   await rm(sandbox, { recursive: true, force: true });
+  await rm(extraction, { recursive: true, force: true });
 }
-console.log(`Portable launcher works: ${command}`);
+console.log(`Extracted portable archive works: ${command}`);
