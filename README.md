@@ -87,7 +87,7 @@ clipforge --env-file /secure/path/clipforge.env analyze --agent deepseek
 
 The command reports only the number of variables loaded, never their values. Existing environment variables take precedence, which keeps CI and shell-injected secrets authoritative. Open **AI adapters** in the dashboard to choose a discovered model, then run its connection test before analyzing media.
 
-OpenAI API works the same way with `OPENAI_API_KEY`; select `openai` after scanning its live model catalog. Clipforge uses the Responses API and sends frames only for an explicit OpenAI analysis run.
+OpenAI and Anthropic API adapters work the same way with `OPENAI_API_KEY` or `ANTHROPIC_API_KEY`; select `openai` or `anthropic` after scanning its live model catalog. They are separate from the installed Codex and Claude clients, and send frames only for an explicit analysis run.
 
 | Provider choice | Authentication route | What it means |
 | --- | --- | --- |

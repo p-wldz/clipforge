@@ -1,5 +1,6 @@
 import { deepseekChat } from './deepseek.js';
 import { openaiResponses } from './openai.js';
+import { anthropicMessages } from './anthropic.js';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { AgentProvider } from '../core/paths.js';
@@ -239,12 +240,12 @@ export async function understandClip(options: {
   try {
     let responseText = '';
     onEvent?.(`Invoking ${provider}${model ? ` (${model})` : ''} with ${images.length} frames`);
-    if (provider === 'deepseek' || provider === 'openai') {
+    if (provider === 'deepseek' || provider === 'openai' || provider === 'anthropic') {
       const result = provider === 'deepseek' ? await deepseekChat(prompt, {
         model,
         images,
         timeoutMs: options.timeoutMs ?? 10 * 60 * 1000,
-      }) : await openaiResponses(prompt, { model, images, timeoutMs: options.timeoutMs ?? 10 * 60 * 1000 });
+      }) : provider === 'openai' ? await openaiResponses(prompt, { model, images, timeoutMs: options.timeoutMs ?? 10 * 60 * 1000 }) : await anthropicMessages(prompt, { model, images, timeoutMs: options.timeoutMs ?? 10 * 60 * 1000 });
       responseText = result.text;
       trace.model = result.model;
       trace.usage = result.usage;
@@ -365,13 +366,13 @@ export async function runAgentText(
     `${provider}: starting model=${model || 'default'}, prompt=${prompt.length} chars, timeout=${Math.round(timeoutMs / 1000)}s`,
   );
   try {
-    if (provider === 'deepseek' || provider === 'openai') {
+    if (provider === 'deepseek' || provider === 'openai' || provider === 'anthropic') {
       const result = provider === 'deepseek'
         ? await deepseekChat(prompt, { model, timeoutMs, signal })
-        : await openaiResponses(prompt, { model, timeoutMs, signal });
+        : provider === 'openai' ? await openaiResponses(prompt, { model, timeoutMs, signal }) : await anthropicMessages(prompt, { model, timeoutMs, signal });
       onUsage?.(result.usage);
       await writeFile(outputPath, result.text);
-      onEvent?.(`deepseek: completed in ${Date.now() - started}ms; response=${result.text.length} chars`);
+      onEvent?.(`${provider}: completed in ${Date.now() - started}ms; response=${result.text.length} chars`);
       return result.text;
     }
     if (provider === 'codex') {

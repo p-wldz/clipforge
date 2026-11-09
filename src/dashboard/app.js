@@ -6,6 +6,10 @@ const openaiOption = document.createElement('option');
 openaiOption.value = 'openai';
 openaiOption.textContent = 'OpenAI API';
 $('#analysis-provider').append(openaiOption);
+const anthropicOption = document.createElement('option');
+anthropicOption.value = 'anthropic';
+anthropicOption.textContent = 'Anthropic API';
+$('#analysis-provider').append(anthropicOption);
 const providerHelp = document.createElement('p');
 providerHelp.id = 'analysis-provider-help';
 providerHelp.className = 'muted little';
@@ -17,6 +21,7 @@ const providerHints = {
   claude: 'Installed Claude client. Uses its signed-in OS account and sends analysis input only for this explicit run.',
   deepseek: 'DeepSeek API key. Start Clipforge with --env-file containing DEEPSEEK_API_KEY before testing or analyzing.',
   openai: 'OpenAI API key. Start Clipforge with --env-file containing OPENAI_API_KEY, choose a discovered model, then test it.',
+  anthropic: 'Anthropic API key. Start Clipforge with --env-file containing ANTHROPIC_API_KEY, choose a discovered model, then test it.',
 };
 function updateProviderHelp() {
   const provider = $('#analysis-provider').value;
@@ -1136,7 +1141,7 @@ async function loadInventory() {
   ]
     .map(
       ([id, label]) =>
-        `<div><label>${label} agent<select id="agent-${id}">${['none', 'codex', 'claude', 'deepseek', 'openai'].map((p) => `<option value="${p}" ${stages[id].provider === p ? 'selected' : ''}>${p}</option>`).join('')}</select></label></div><div><label>${label} model<select id="model-${id}">${modelOptions(stages[id].provider, stages[id].model || '')}</select></label></div>`,
+        `<div><label>${label} agent<select id="agent-${id}">${['none', 'codex', 'claude', 'deepseek', 'openai', 'anthropic'].map((p) => `<option value="${p}" ${stages[id].provider === p ? 'selected' : ''}>${p}</option>`).join('')}</select></label></div><div><label>${label} model<select id="model-${id}">${modelOptions(stages[id].provider, stages[id].model || '')}</select></label></div>`,
     )
     .join('');
 }

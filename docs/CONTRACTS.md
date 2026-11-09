@@ -4,7 +4,7 @@
 `.clipforge/config.json` is JSON version 1. Paths `clips/` and `.clipforge/` are relative to workspace unless absolute. `artifacts/<stable clip id>/` stores metadata, frames, audio-activity, optional transcript and highlight proposals. A source video's ID is a SHA-256 of its resolved absolute path, truncated to 16 hex digits; moving source invalidates path identity.
 
 ## AI providers
-`codex` and `claude` use an explicitly installed, signed-in OS client. `deepseek` and `openai` use only their explicit environment keys (`DEEPSEEK_API_KEY`, `OPENAI_API_KEY`); keys are never persisted in workspace configuration. Provider support and authentication mode are defined in `src/core/providers.ts`; a provider catalog is not proof of access, so a real smoke test remains required.
+`codex` and `claude` use an explicitly installed, signed-in OS client. `deepseek`, `openai`, and `anthropic` use only their explicit environment keys (`DEEPSEEK_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`); keys are never persisted in workspace configuration. Provider support and authentication mode are defined in `src/core/providers.ts`; a provider catalog is not proof of access, so a real smoke test remains required.
 
 ## SQLite
 - `clips(id, source_path, duration, width, height, analyzed_at, transcript)`

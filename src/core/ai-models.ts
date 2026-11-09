@@ -1,5 +1,6 @@
 import { deepseekKey, deepseekModels } from '../agents/deepseek.js';
 import { openaiKey, openaiModels } from '../agents/openai.js';
+import { anthropicKey, anthropicModels } from '../agents/anthropic.js';
 import { detectAgents } from './providers.js';
 import { loadConfig } from './paths.js';
 import { run } from './process.js';
@@ -20,27 +21,6 @@ const normalize = (value: string): DiscoveredModel => ({
   label: value,
   inputModalities: ['text', 'image'],
 });
-async function anthropicApiModels(): Promise<DiscoveredModel[]> {
-  if (!process.env.ANTHROPIC_API_KEY) return [];
-  const res = await fetch('https://api.anthropic.com/v1/models?limit=100', {
-    headers: {
-      'x-api-key': process.env.ANTHROPIC_API_KEY,
-      'anthropic-version': '2023-06-01',
-    },
-    signal: AbortSignal.timeout(8000),
-  });
-  if (!res.ok) throw new Error(`Anthropic models API HTTP ${res.status}`);
-  const payload = (await res.json()) as {
-    data?: Array<{ id?: string; display_name?: string }>;
-  };
-  return (payload.data ?? [])
-    .filter((x): x is { id: string; display_name?: string } => typeof x.id === 'string')
-    .map((x) => ({
-      id: x.id,
-      label: x.display_name || x.id,
-      inputModalities: ['text', 'image'],
-    }));
-}
 /** Never present locally configured/hard-coded IDs as if the provider grants access. */
 export async function scanAiModels(root: string) {
   const [installed, config] = await Promise.all([detectAgents(), loadConfig(root)]);
@@ -62,12 +42,7 @@ export async function scanAiModels(root: string) {
     }
     if (name === 'claude') {
       try {
-        if (process.env.ANTHROPIC_API_KEY) {
-          models = await anthropicApiModels();
-          source = 'provider-api';
-          note =
-            'Live Anthropic API models for the API key. Claude Code subscription entitlement may differ.';
-        } else if (check.installed) {
+        if (check.installed) {
           const output = String(
             (
               await run('claude', ['models'], {
@@ -149,6 +124,30 @@ export async function scanAiModels(root: string) {
     source: openaiAvailable ? 'provider-api' : 'none',
     note: openaiNote,
     usable: openaiAvailable,
+    accessVerified: false,
+  };
+  const anthropicAvailable = !!anthropicKey();
+  let anthropic: DiscoveredModel[] = [],
+    anthropicNote = 'ANTHROPIC_API_KEY is required for live model discovery';
+  if (anthropicAvailable) {
+    try {
+      anthropic = (await anthropicModels()).map((model) => ({
+        id: model.id,
+        label: model.display_name || model.id,
+        inputModalities: ['text', 'image'],
+      }));
+      anthropicNote = 'Live Anthropic API models for this API key. Verify the selected model with Test AI.';
+    } catch (error) {
+      anthropicNote = `Anthropic model discovery unavailable: ${(error as Error).message}`;
+    }
+  }
+  providers.anthropic = {
+    installed: anthropicAvailable,
+    models: anthropic.map((model) => model.id),
+    modelDetails: anthropic,
+    source: anthropicAvailable ? 'provider-api' : 'none',
+    note: anthropicNote,
+    usable: anthropicAvailable,
     accessVerified: false,
   };
   return {

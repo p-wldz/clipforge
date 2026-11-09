@@ -1,6 +1,6 @@
 import { checkTool } from './process.js';
 
-export const analysisProviders = ['codex', 'claude', 'deepseek', 'openai'] as const;
+export const analysisProviders = ['codex', 'claude', 'deepseek', 'openai', 'anthropic'] as const;
 export type AnalysisProvider = (typeof analysisProviders)[number];
 export type ProviderAuth = 'installed-client' | 'api-key';
 export const providerInfo: Record<AnalysisProvider, { auth: ProviderAuth; environment?: string }> = {
@@ -8,6 +8,7 @@ export const providerInfo: Record<AnalysisProvider, { auth: ProviderAuth; enviro
   claude: { auth: 'installed-client' },
   deepseek: { auth: 'api-key', environment: 'DEEPSEEK_API_KEY' },
   openai: { auth: 'api-key', environment: 'OPENAI_API_KEY' },
+  anthropic: { auth: 'api-key', environment: 'ANTHROPIC_API_KEY' },
 };
 export function isAnalysisProvider(value: unknown): value is AnalysisProvider {
   return typeof value === 'string' && (analysisProviders as readonly string[]).includes(value);
