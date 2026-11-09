@@ -1,0 +1,42 @@
+name: Publish portable archives
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  archive:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.13.0
+          cache: npm
+      - run: npm ci
+      - run: npm run ci
+      - run: npm run release:archive
+      - name: Archive (Unix)
+        if: runner.os != 'Windows'
+        run: tar -C release -czf ../release/${{ github.ref_name }}-${{ runner.os }}-${{ runner.arch }}.tar.gz clipforge-*
+      - name: Archive (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: Compress-Archive -Path release\* -DestinationPath release\${{ github.ref_name }}-Windows-${{ runner.arch }}.zip
+      - name: SHA-256 checksums
+        shell: bash
+        run: cd release && (sha256sum *.tar.gz *.zip 2>/dev/null || shasum -a 256 *.tar.gz *.zip) > SHA256SUMS
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            release/*.tar.gz
+            release/*.zip
+            release/SHA256SUMS

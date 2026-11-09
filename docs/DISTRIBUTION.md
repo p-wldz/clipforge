@@ -65,6 +65,11 @@ project's local-first contract.
 - `.github/workflows/publish-npm.yml` runs only on version tags; `prepublishOnly`
   executes the same verification before `npm publish --provenance`. It does not
   create a release archive or install external media/model dependencies.
+- `.github/workflows/release-archives.yml` creates portable per-platform archives
+  on the same tag. Each archive contains the compiled CLI, its matching Node
+  runtime, a small `clipforge`/`clipforge.cmd` launcher, and the README; the
+  workflow publishes SHA-256 checksums. The archive does not install FFmpeg,
+  Python, models, or an AI provider.
 
 ## Non-goals for the first publication
 
