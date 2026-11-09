@@ -55,6 +55,17 @@ project's local-first contract.
    packaging supports unattended installation and upgrades. Validate the manifest
    before submission and expect community-repository review.
 
+## Implemented publication guardrails
+
+- `.github/workflows/ci.yml` runs the full verification command on Ubuntu, Windows,
+  and macOS with the supported Node baseline.
+- `npm run ci` runs typecheck, tests, build, dashboard syntax validation, and
+  `npm pack --dry-run`; `prepublishOnly` uses the same command so a local publish
+  cannot skip those checks.
+- `.github/workflows/publish-npm.yml` runs only on version tags; `prepublishOnly`
+  executes the same verification before `npm publish --provenance`. It does not
+  create a release archive or install external media/model dependencies.
+
 ## Non-goals for the first publication
 
 - Do not make a global installer silently provision FFmpeg, Python, speech models,
