@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { TokenUsage } from '../core/usage.js';
+import { AppError } from '../core/errors.js';
 
 export const DEEPSEEK_API_BASE = 'https://api.deepseek.com';
 export const DEFAULT_DEEPSEEK_MODEL = 'deepseek-flash';
@@ -40,13 +41,17 @@ export async function deepseekChat(
 }> {
   const key = deepseekKey();
   if (!key)
-    throw new Error(
-      'DEEPSEEK_API_KEY is not set. Create a key at platform.deepseek.com and set it in your environment.',
+    throw new AppError(
+      'DeepSeek is not configured.',
+      'DEEPSEEK_KEY_MISSING',
+      'Start Clipforge with --env-file <path> containing DEEPSEEK_API_KEY, then test the adapter again.',
     );
   const model = opts.model || DEFAULT_DEEPSEEK_MODEL;
   if (opts.images?.length && model !== 'deepseek-flash')
-    throw new Error(
-      'DeepSeek vision requires deepseek-flash. Select this model for clip analysis.',
+    throw new AppError(
+      'The selected DeepSeek model cannot receive sampled frames.',
+      'DEEPSEEK_VISION_MODEL_REQUIRED',
+      'Choose a DeepSeek vision-capable model for clip analysis, or use a text-only provider for stages without frames.',
     );
   const content: Array<Record<string, unknown>> = [{ type: 'text', text: prompt }];
   for (const image of opts.images ?? []) {
@@ -80,7 +85,13 @@ export async function deepseekChat(
       : AbortSignal.timeout(opts.timeoutMs ?? 180000),
   });
   const raw = await response.text();
-  if (!response.ok) throw new Error(`DeepSeek API HTTP ${response.status}: ${raw.slice(0, 500)}`);
+  if (!response.ok)
+    throw new AppError(
+      `DeepSeek API request failed (HTTP ${response.status}).`,
+      'DEEPSEEK_API_REQUEST_FAILED',
+      deepseekHint(response.status),
+      response.status === 401 || response.status === 403 ? 401 : 502,
+    );
   const data = JSON.parse(raw) as {
     choices?: Array<{ message?: { content?: string } }>;
     usage?: unknown;
@@ -88,6 +99,14 @@ export async function deepseekChat(
   const text = data.choices?.[0]?.message?.content;
   if (!text) throw new Error('DeepSeek API returned an empty response');
   return { text, usage: parseDeepseekUsage(data.usage), raw, model };
+}
+
+function deepseekHint(status: number) {
+  if (status === 401 || status === 403)
+    return 'Check DEEPSEEK_API_KEY and its account permissions, then run the adapter test again.';
+  if (status === 429)
+    return 'DeepSeek rate-limited this request. Wait before retrying or reduce concurrent work.';
+  return 'Check the provider status, selected model, and local run log before retrying.';
 }
 export async function deepseekModels(): Promise<
   Array<{ id: string; name?: string; input_modalities?: string[] }>

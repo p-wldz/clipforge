@@ -23,6 +23,7 @@ import { scanAiModels } from './core/ai-models.js';
 import { analyze } from './pipeline/analyze.js';
 import { contexts } from './pipeline/staged-ai.js';
 import { validateCatalog } from './core/usage.js';
+import { errorStatus, publicError } from './core/errors.js';
 const dashboardRoot = fileURLToPath(new URL('./dashboard/', import.meta.url));
 const contentTypes: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
@@ -944,7 +945,10 @@ export function startServer(root: string, port: number, host = '127.0.0.1'): Das
       }
       return send(res, 404, { error: 'Not found' });
     } catch (e) {
-      if (!res.headersSent) send(res, 400, { error: (e as Error).message });
+      const error = e as Error;
+      // Do not log request bodies: they can contain private creative context or credentials.
+      console.error(`[dashboard] ${req.method} ${req.url}: ${error.stack ?? error.message}`);
+      if (!res.headersSent) send(res, errorStatus(e), publicError(e));
       else res.destroy();
     } finally {
       try {

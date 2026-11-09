@@ -82,9 +82,12 @@ let clips = [],
 const clipOf = (h) => clips.find((c) => c.id === h?.clip_id);
 const highlightOf = (id) => highlights.find((h) => h.id === id);
 const fileName = (p) => (p || '').split(/[\\/]/).pop();
-function notify(s) {
+function notify(value) {
+  const error = value instanceof Error ? value : null;
+  const s = error ? `${error.message}${error.hint ? ` ${error.hint}` : ''}` : String(value);
   const t = $('#toast');
   t.textContent = s;
+  t.classList.toggle('error', Boolean(error));
   t.style.display = 'block';
   setTimeout(() => (t.style.display = 'none'), 4200);
 }
@@ -94,7 +97,12 @@ async function api(url, opts = {}) {
     headers: { 'Content-Type': 'application/json', ...(opts.headers || {}) },
   });
   const body = await r.json();
-  if (!r.ok) throw Error(body.error || `Request failed (${r.status})`);
+  if (!r.ok) {
+    const error = Error(body.error || `Request failed (${r.status})`);
+    error.code = body.code;
+    error.hint = body.hint;
+    throw error;
+  }
   return body;
 }
 async function send(url, method, data) {
@@ -112,7 +120,7 @@ function navigate(page) {
   };
   $('#section-title').textContent = titles[page];
   history.replaceState(null, '', '#' + page);
-  if (page === 'settings' || page === 'adapters') loadSettings().catch((e) => notify(e.message));
+  if (page === 'settings' || page === 'adapters') loadSettings().catch(notify);
 }
 $$('.nav').forEach((el) => (el.onclick = () => navigate(el.dataset.page)));
 $('#go-studio').onclick = () => navigate('studio');
