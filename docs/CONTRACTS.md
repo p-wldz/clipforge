@@ -40,5 +40,7 @@ The dashboard can delete one, selected, or all highlights after confirmation. Th
 ## Security
 Dashboard binds `127.0.0.1` by default. Do not expose without auth, CSRF protection, restrictive CORS and file access audit. No shell for external tools. Restrict all media access to DB-known videos, no arbitrary file fetch route. Agent output is untrusted, validated and truncated. Original inputs never overwritten.
 
+Dashboard errors return a local `requestId` alongside a safe message, code, and optional recovery hint. Terminal logs use the same ID in one JSON record and exclude request bodies, headers, query strings, and stack traces.
+
 ## Next schema version
 Implement migrations before changing database columns; consider stage key `(source fingerprint, config hash, provider version)` rather than only file path. Consider cleanup of old candidates on --force while preserving edited reviews, and transactionally inserting project items.

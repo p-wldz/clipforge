@@ -23,7 +23,7 @@ import { scanAiModels } from './core/ai-models.js';
 import { analyze } from './pipeline/analyze.js';
 import { contexts } from './pipeline/staged-ai.js';
 import { validateCatalog } from './core/usage.js';
-import { errorStatus, publicError } from './core/errors.js';
+import { errorLogEntry, errorStatus, publicError } from './core/errors.js';
 import { isAnalysisProvider } from './core/providers.js';
 const dashboardRoot = fileURLToPath(new URL('./dashboard/', import.meta.url));
 const contentTypes: Record<string, string> = {
@@ -79,6 +79,7 @@ export function startServer(root: string, port: number, host = '127.0.0.1'): Das
   const activeAnalysisJobs = new Map<string, AnalysisJob>();
   const server = http.createServer(async (req, res) => {
     const db = new Store(root);
+    const requestId = newId();
     try {
       const url = new URL(req.url ?? '/', `http://${host}:${port}`);
       const parts = url.pathname.split('/').filter(Boolean);
@@ -946,10 +947,11 @@ export function startServer(root: string, port: number, host = '127.0.0.1'): Das
       }
       return send(res, 404, { error: 'Not found' });
     } catch (e) {
-      const error = e as Error;
-      // Do not log request bodies: they can contain private creative context or credentials.
-      console.error(`[dashboard] ${req.method} ${req.url}: ${error.stack ?? error.message}`);
-      if (!res.headersSent) send(res, errorStatus(e), publicError(e));
+      const path = (req.url ?? '/').split('?')[0] ?? '/';
+      // Do not log request bodies, headers, query strings, or stack traces.
+      console.error(errorLogEntry({ requestId, method: req.method, path, error: e }));
+      if (!res.headersSent)
+        send(res, errorStatus(e), { ...publicError(e), requestId });
       else res.destroy();
     } finally {
       try {

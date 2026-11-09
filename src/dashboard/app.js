@@ -106,7 +106,9 @@ const highlightOf = (id) => highlights.find((h) => h.id === id);
 const fileName = (p) => (p || '').split(/[\\/]/).pop();
 function notify(value) {
   const error = value instanceof Error ? value : null;
-  const s = error ? `${error.message}${error.hint ? ` ${error.hint}` : ''}` : String(value);
+  const s = error
+    ? `${error.message}${error.hint ? ` ${error.hint}` : ''}${error.requestId ? ` Reference: ${error.requestId}` : ''}`
+    : String(value);
   const t = $('#toast');
   t.textContent = s;
   t.classList.toggle('error', Boolean(error));
@@ -123,6 +125,7 @@ async function api(url, opts = {}) {
     const error = Error(body.error || `Request failed (${r.status})`);
     error.code = body.code;
     error.hint = body.hint;
+    error.requestId = body.requestId;
     throw error;
   }
   return body;

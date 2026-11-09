@@ -19,3 +19,22 @@ export function publicError(error: unknown) {
 export function errorStatus(error: unknown) {
   return error instanceof AppError ? error.status : 400;
 }
+
+/** A compact local log record: never include request bodies, headers, or stack traces. */
+export function errorLogEntry(input: {
+  requestId: string;
+  method?: string;
+  path: string;
+  error: unknown;
+}) {
+  const response = publicError(input.error);
+  return JSON.stringify({
+    at: new Date().toISOString(),
+    scope: 'dashboard',
+    requestId: input.requestId,
+    method: input.method ?? 'UNKNOWN',
+    path: input.path,
+    code: response.code,
+    error: response.error,
+  });
+}
