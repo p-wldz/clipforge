@@ -81,7 +81,8 @@ models, and AI credentials remain user-managed external dependencies.
   Python, models, or an AI provider. It smoke-tests the packaged launcher before
   publishing any release asset. Platform jobs upload build artifacts only; one
   dependent publish job generates the single combined `SHA256SUMS` file and
-  attaches every asset, avoiding concurrent release-asset updates.
+  attaches every asset, avoiding concurrent release-asset updates. Build jobs
+  have read-only repository permissions; only that final job can write assets.
 
 ## Non-goals for the first publication
 
