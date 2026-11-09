@@ -7,7 +7,9 @@ import os from 'node:os';
 import path from 'node:path';
 test('Anthropic API provider is separate from the installed Claude client', () => {
   assert.equal(isAnalysisProvider('anthropic'), true);
-  assert.deepEqual(providerInfo.anthropic, { auth: 'api-key', environment: 'ANTHROPIC_API_KEY' });
+  assert.equal(providerInfo.anthropic.auth, 'api-key');
+  assert.equal(providerInfo.anthropic.environment, 'ANTHROPIC_API_KEY');
+  assert.equal(providerInfo.anthropic.label, 'Anthropic API');
   assert.deepEqual(parseAnthropicUsage({ input_tokens: 12, cache_read_input_tokens: 4, output_tokens: 8 }), { inputTokens: 12, cachedInputTokens: 4, outputTokens: 8 });
 });
 

@@ -2,33 +2,29 @@ import { stopAtBoundary } from './playback.js';
 
 const $ = (q) => document.querySelector(q),
   $$ = (q) => [...document.querySelectorAll(q)];
-const openaiOption = document.createElement('option');
-openaiOption.value = 'openai';
-openaiOption.textContent = 'OpenAI API';
-$('#analysis-provider').append(openaiOption);
-const anthropicOption = document.createElement('option');
-anthropicOption.value = 'anthropic';
-anthropicOption.textContent = 'Anthropic API';
-$('#analysis-provider').append(anthropicOption);
 const providerHelp = document.createElement('p');
 providerHelp.id = 'analysis-provider-help';
 providerHelp.className = 'muted little';
 providerHelp.setAttribute('role', 'status');
 $('#analysis-provider').closest('label').after(providerHelp);
-const providerHints = {
+let providerHints = {
   none: 'Local analysis only. No frames, video, audio, or transcripts leave this computer.',
-  codex: 'Installed Codex client. Uses its signed-in OS account and sends selected frames only for this explicit run.',
-  claude: 'Installed Claude client. Uses its signed-in OS account and sends analysis input only for this explicit run.',
-  deepseek: 'DeepSeek API key. Start Clipforge with --env-file containing DEEPSEEK_API_KEY before testing or analyzing.',
-  openai: 'OpenAI API key. Start Clipforge with --env-file containing OPENAI_API_KEY, choose a discovered model, then test it.',
-  anthropic: 'Anthropic API key. Start Clipforge with --env-file containing ANTHROPIC_API_KEY, choose a discovered model, then test it.',
 };
+async function loadProviderChoices() {
+  const choices = await api('/api/ai/providers');
+  const select = $('#analysis-provider'), selected = select.value;
+  select.innerHTML = '<option value="none">No AI</option>' + choices.map((choice) => `<option value="${choice.id}">${choice.label}</option>`).join('');
+  select.value = selected;
+  providerHints = { ...providerHints, ...Object.fromEntries(choices.map((choice) => [choice.id, choice.hint])) };
+  updateProviderHelp();
+}
 function updateProviderHelp() {
   const provider = $('#analysis-provider').value;
   providerHelp.textContent = providerHints[provider] || 'Choose a provider, then test it before analyzing media.';
 }
 $('#analysis-provider').addEventListener('change', updateProviderHelp);
 updateProviderHelp();
+loadProviderChoices().catch(() => {});
 const stopAnalysis = document.createElement('button');
 stopAnalysis.id = 'stop-analysis';
 stopAnalysis.className = 'button-secondary danger-button';

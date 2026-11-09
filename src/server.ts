@@ -24,7 +24,7 @@ import { analyze } from './pipeline/analyze.js';
 import { contexts } from './pipeline/staged-ai.js';
 import { validateCatalog } from './core/usage.js';
 import { AppError, errorLogEntry, errorStatus, publicError } from './core/errors.js';
-import { isAnalysisProvider } from './core/providers.js';
+import { analysisProviders, isAnalysisProvider, providerInfo } from './core/providers.js';
 import {
   browserPreviewMetadataPath,
   browserPreviewPath,
@@ -119,6 +119,8 @@ export function startServer(root: string, port: number, host = '127.0.0.1'): Das
     try {
       const url = new URL(req.url ?? '/', `http://${host}:${port}`);
       const parts = url.pathname.split('/').filter(Boolean);
+      if (url.pathname === '/api/ai/providers' && req.method === 'GET')
+        return send(res, 200, analysisProviders.map((id) => ({ id, ...providerInfo[id] })));
       if (url.pathname === '/api/ai/pricing' && req.method === 'GET') {
         const config = await loadConfig(root);
         return send(res, 200, config.pricing ?? {});

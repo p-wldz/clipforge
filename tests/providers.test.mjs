@@ -7,6 +7,8 @@ test('provider registry distinguishes runnable providers and their credential ro
   assert.equal(isAnalysisProvider('cursor'), false);
   assert.equal(isKnownProvider('cursor'), true);
   assert.equal(isKnownProvider('unknown'), false);
-  assert.deepEqual(providerInfo.openai, { auth: 'api-key', environment: 'OPENAI_API_KEY' });
-  assert.deepEqual(providerInfo.codex, { auth: 'installed-client' });
+  assert.equal(providerInfo.openai.environment, 'OPENAI_API_KEY');
+  assert.equal(providerInfo.openai.auth, 'api-key');
+  assert.equal(providerInfo.codex.auth, 'installed-client');
+  assert.match(providerInfo.anthropic.hint, /ANTHROPIC_API_KEY/);
 });
