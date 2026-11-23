@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import { mkdtemp, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -17,7 +18,13 @@ test('detects sudden audio increase without declaring an explosion', () => {
   assert(events.every((x) => !x.type.includes('explosion')));
 });
 
-test('FFmpeg PCM audio inspection identifies signal peaks', async () => {
+test('FFmpeg PCM audio inspection identifies signal peaks', async (t) => {
+  try {
+    execFileSync('ffmpeg', ['-version'], { stdio: 'ignore' });
+  } catch {
+    t.skip('ffmpeg unavailable');
+    return;
+  }
   const dir = await mkdtemp(path.join(os.tmpdir(), 'clipforge-audio-'));
   try {
     const file = path.join(dir, 'sound.wav');
