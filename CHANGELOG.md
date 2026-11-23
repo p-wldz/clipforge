@@ -7,6 +7,10 @@ semantic versioning; version tags are `v<package.json version>`.
 
 - No unreleased entries yet.
 
+## 0.15.4
+
+- Added a GitHub Packages mirror published as `@p-wldz/clipforge`.
+
 ## 0.15.3
 
 - Fixed Unix portable-archive creation in the GitHub release workflow.

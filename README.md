@@ -46,6 +46,17 @@ Or run it without a global installation:
 npx clipforge --help
 ```
 
+### GitHub Packages
+
+The same release is also published to GitHub Packages as `@p-wldz/clipforge`.
+Authenticate with a GitHub personal access token that has `read:packages`, then
+install it from GitHub's npm registry:
+
+```sh
+npm login --scope=@p-wldz --registry=https://npm.pkg.github.com
+npm install --global @p-wldz/clipforge
+```
+
 Confirm the local dependencies before processing footage. `doctor` only reports what is available: it never installs software or contacts an AI provider.
 
 ```sh
