@@ -7,6 +7,10 @@ semantic versioning; version tags are `v<package.json version>`.
 
 - No unreleased entries yet.
 
+## 0.15.2
+
+- Fixed portable archive verification on hosts where optional FFmpeg tools are not installed.
+
 ## 0.15.1
 
 - Fixed npm trusted publishing from GitHub Actions by using an OIDC-compatible npm CLI and avoiding an empty token configuration.
