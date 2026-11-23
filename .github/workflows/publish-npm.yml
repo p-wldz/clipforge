@@ -20,7 +20,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22.16.0
-          registry-url: https://registry.npmjs.org
+      # npm 11.5.1+ is required for OIDC trusted publishing. Omitting
+      # registry-url prevents setup-node from writing an empty auth-token entry
+      # that would block npm from exchanging GitHub's OIDC token.
+      - run: npm install --global npm@^11.5.1
       - run: npm ci
       - run: npm run release:version:check
       - run: npm publish --provenance

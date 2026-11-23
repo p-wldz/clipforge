@@ -7,6 +7,10 @@ semantic versioning; version tags are `v<package.json version>`.
 
 - No unreleased entries yet.
 
+## 0.15.1
+
+- Fixed npm trusted publishing from GitHub Actions by using an OIDC-compatible npm CLI and avoiding an empty token configuration.
+
 ## 0.15.0
 
 - Added OpenAI and Anthropic API-key adapters alongside installed Codex and Claude clients.
