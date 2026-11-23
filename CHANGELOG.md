@@ -7,6 +7,10 @@ semantic versioning; version tags are `v<package.json version>`.
 
 - No unreleased entries yet.
 
+## 0.15.3
+
+- Fixed Unix portable-archive creation in the GitHub release workflow.
+
 ## 0.15.2
 
 - Fixed portable archive verification on hosts where optional FFmpeg tools are not installed.

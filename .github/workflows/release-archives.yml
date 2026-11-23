@@ -32,7 +32,10 @@ jobs:
       - run: npm run release:archive:check
       - name: Archive (Unix)
         if: runner.os != 'Windows'
-        run: tar -C release -czf ../release/${{ github.ref_name }}-${{ runner.os }}-${{ runner.arch }}.tar.gz clipforge-*
+        run: |
+          archive_dir="clipforge-$(node -p "require('./package.json').version")-$(node -p "process.platform")-$(node -p "process.arch")"
+          test -d "release/$archive_dir"
+          tar -C release -czf "release/${{ github.ref_name }}-${{ runner.os }}-${{ runner.arch }}.tar.gz" "$archive_dir"
       - name: Archive (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
