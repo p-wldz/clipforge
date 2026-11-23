@@ -1,215 +1,236 @@
-# Clipforge Local
+# Clipforge
 
-Clipforge turns local gameplay recordings into reviewable highlights and editable films. It keeps source videos untouched, stores project state beside the project, and only contacts an AI provider when you explicitly request it.
+**Turn gameplay recordings into reviewable highlights and editable films, locally.**
 
-It is a review tool, not a reliable game-event detector. Audio activity and AudioSet labels are signals, not proof of a kill, explosion, or joke. AI output is a proposal; rendering always requires an explicit user action.
+Clipforge is a local-first CLI and dashboard for finding moments in gameplay videos, reviewing them, and rendering a final montage. It keeps original recordings untouched and stores project data, cached frames, transcripts, AI traces, and renders in your project folder.
 
-## Install Clipforge
+It is designed to help you review footage, not to make unchecked decisions for you. Highlight candidates, sound labels, and AI suggestions always need your review. A final render is created only when you explicitly request it.
 
-Choose one installation route:
+> **Start with the dashboard.** After creating a project, run `clipforge dashboard` and open <http://127.0.0.1:4173>. It is the recommended interface for configuring AI, starting analysis, following progress, reviewing highlights, editing a film, and rendering an export.
 
-- **npm / development:** Node.js 22.16 or newer, then install from npm or a checkout.
-- **Portable release archive:** download the archive matching your OS from GitHub Releases, verify its SHA-256 against `SHA256SUMS`, extract it, and put its directory on `PATH`. It bundles the Clipforge runtime, so npm is not required.
+## Why Clipforge
 
-Every route needs FFmpeg and FFprobe on `PATH` for analysis and rendering. Python 3 is optional for local transcription and sound classification; an installed Codex/Claude client or an explicit DeepSeek, OpenAI, or Anthropic API key is optional for AI stages.
+- **Local by default**: videos, SQLite state, artifacts, and renders stay on your machine.
+- **Non-destructive**: source recordings are never modified.
+- **Review before export**: trim, approve, reject, arrange, and preview moments before rendering.
+- **AI when quality matters**: local analysis works without an account or API key, but AI gives the strongest descriptions and editing suggestions. Every AI run remains explicit and auditable.
+- **Inspectable output**: cached frames, transcripts, media signals, and AI artifacts are saved under `.clipforge/`.
 
-After extracting a portable archive, run `clipforge doctor`. It reports missing tools and never installs software or calls an AI provider.
+## What it does
 
-From a checkout of this repository:
+1. Probes gameplay recordings and samples frames, audio activity, and scene changes.
+2. Creates bounded highlight candidates for review.
+3. Optionally adds local transcription and rough sound-event labels.
+4. Optionally asks a configured AI provider to describe complete actions and suggest edits.
+5. Lets you review highlights in a local browser dashboard.
+6. Creates an editable film project and renders it with FFmpeg when you choose.
+
+## Requirements
+
+- Node.js **22.16+**
+- [FFmpeg](https://ffmpeg.org/) and `ffprobe` available on your `PATH`
+
+Python 3 is needed only for optional local transcription or sound classification. An AI provider is needed only for explicit AI commands.
+
+## Install
+
+Install globally from npm:
 
 ```sh
-npm install
-npm run build
-npm link
+npm install --global clipforge
 ```
 
-`npm link` makes the `clipforge` command available in your terminal. If you prefer not to link it globally, use `node /path/to/clipforge/dist/cli.js` in the examples below.
-
-`clipforge doctor` reports missing tools. It never installs software or calls an AI provider.
-
-## Create a project and add clips
+Or run it without a global installation:
 
 ```sh
-mkdir my-highlights && cd my-highlights
-clipforge init --interactive
+npx clipforge --help
 ```
 
-This creates a `clips/` folder. Copy or move your recordings into that folder. Clipforge reads common `.mp4`, `.mkv`, `.mov`, and `.webm` files; it never changes them.
-
-```text
-my-highlights/
-  clips/                 ← put gameplay recordings here
-  .clipforge/            ← Clipforge's local state, artifacts, and renders
-```
-
-Use a different folder at creation time with `clipforge init --clips-dir recordings`, or choose it in the interactive setup. The clips folder must stay inside the project and outside `.clipforge/`.
-
-## Make highlights
-
-Run the local analysis after adding clips:
+Confirm the local dependencies before processing footage. `doctor` only reports what is available: it never installs software or contacts an AI provider.
 
 ```sh
 clipforge doctor
-clipforge analyze
-clipforge dashboard
 ```
 
-Open `http://127.0.0.1:4173`. In the dashboard:
+## Quick start: run with AI (recommended)
 
-1. Review the candidate moments Clipforge found.
-2. Trim a candidate if needed, then approve or reject it.
-3. Create a film from approved highlights, or use Film Studio to arrange any available highlights manually.
-4. Preview the timeline and choose **Render** when you are ready. The finished file is saved under `.clipforge/renders/`.
+Local analysis is a useful private baseline, but it only turns media signals into candidates. For better results, run the optional AI stages: they inspect the full clip context, describe complete actions, and select moments that fit your editing brief. Clipforge still requires you to review and approve every suggestion.
 
-Local analysis uses media metadata, frames, audio activity, and any optional local enrichment you enable. It can suggest moments, but it does not prove game events.
-
-## Use AI understanding and suggestions
-
-To use AI analysis, choose a provider and opt in explicitly:
+Create a workspace and add recordings:
 
 ```sh
-clipforge ai set understanding codex
-clipforge ai set editing codex
-clipforge analyze --agent --force
+mkdir my-highlights
+clipforge init ./my-highlights --name "Friday squad"
+
+# Copy .mp4, .mkv, .mov, or .webm recordings into ./my-highlights/clips/
+clipforge --root ./my-highlights doctor
 ```
 
-An AI call can transmit selected frames and analysis metadata to that provider and may consume quota. It is never part of the default analysis path. You can test a configured provider before analysing your clips:
+Start the dashboard immediately after creating the workspace:
 
 ```sh
-clipforge ai test understanding
+clipforge --root ./my-highlights dashboard
 ```
 
-### DeepSeek API credentials
+Open <http://127.0.0.1:4173>. **The dashboard is the recommended way to use Clipforge**: it is the local control center for AI configuration, analysis progress, logs, candidate review, trim adjustments, Film Studio, and explicit rendering. In the dashboard, scan the available providers/models, select and test your AI settings, then start the analysis. Review the proposed moments, adjust their boundaries, approve the ones you want, arrange them in Film Studio, and select **Render** when ready.
 
-DeepSeek uses `DEEPSEEK_API_KEY`; the key is never stored in the workspace configuration. Put it in a private file outside the video project (copy [`.env.example`](.env.example) as a starting point), then explicitly load it for the command:
+`agents` tells you whether a local client is installed. The dashboard can also scan providers and models, but neither detection path proves that your account is authorized. Use the dashboard's connection test before analyzing your recordings.
 
-```sh
-clipforge --env-file /secure/path/clipforge.env agent test deepseek
-clipforge --env-file /secure/path/clipforge.env ai set clip deepseek
-clipforge --env-file /secure/path/clipforge.env analyze --agent deepseek
-```
+## Dashboard tour
 
-The command reports only the number of variables loaded, never their values. Existing environment variables take precedence, which keeps CI and shell-injected secrets authoritative. Open **AI adapters** in the dashboard to choose a discovered model, then run its connection test before analyzing media.
+The dashboard is where a Clipforge project is managed from first scan to final export.
 
-OpenAI and Anthropic API adapters work the same way with `OPENAI_API_KEY` or `ANTHROPIC_API_KEY`; select `openai` or `anthropic` after scanning its live model catalog. They are separate from the installed Codex and Claude clients, and send frames only for an explicit analysis run.
+### Project overview
 
-| Provider choice | Authentication route | What it means |
-| --- | --- | --- |
-| `none` | None | Fully local candidate analysis. |
-| `codex` / `claude` | Installed, signed-in OS client | Uses that client’s account and configuration; no API key is saved by Clipforge. |
-| `deepseek` / `openai` / `anthropic` | Explicit environment variable | Uses `DEEPSEEK_API_KEY`, `OPENAI_API_KEY`, or `ANTHROPIC_API_KEY` from the current terminal or `--env-file`. |
+See the project at a glance, start analysis, follow its current status, and open the relevant workspace tools.
 
-An installed client and an API key are deliberately separate choices. Clipforge does not silently switch between them.
+![Clipforge Studio project overview](<docs/assets/screens/Clipforge Studio home.png>)
 
-## What Clipforge does
+### AI adapters and models
 
-1. **Media analysis** probes the video, samples frames, records audio activity, and optionally runs local transcription or sound classification.
-2. **Deep Action Analysis** is an optional AI pass that maps complete actions from quiet setup through outcome and reaction, with timestamped evidence and uncertainty. It is independent of creative preferences and cached for reuse.
-3. **Contextual understanding** is an optional domain interpretation layer. It can explain game terminology without changing the base observations.
-4. **Contextual Editing** decides which complete actions fit the editing context, including exact boundaries, setup/reaction needs, and optional acceleration. It can select none.
-5. **Critical Review** is optional and limited to one pass (`analysis.criticalReviewPasses: 1`); it stores original and corrected proposals and flags uncertain ranges for visual reanalysis.
-6. **Film direction** selects and orders existing highlights for a separate film-direction context. It creates an editable proposal, never an automatic render.
-7. **Human review and rendering** happen in the dashboard or CLI. Source recordings are never modified.
+Scan installed clients and available API providers, choose a provider/model for each AI stage, then run a real connection test before analyzing footage.
 
-Projects have three independent contexts in `.clipforge/contexts.json`:
+![Clipforge Studio AI adapters and models](<docs/assets/screens/Clipforge Studio ai models.png>)
 
-- `domain`: what events mean in the game or domain.
-- `editing`: what makes a clip useful as a highlight.
-- `filmDirection`: what the final film should feel like.
+### Highlight review
 
-Changing an editing or film-direction context does not invalidate media analysis or base understanding. Base artifacts are stored in `.clipforge/artifacts/<clip-id>/understanding/`; context-keyed highlight sets and cache metadata are stored in the local SQLite database.
+Inspect proposed moments, play them back, adjust their boundaries, and approve or reject them before they reach a film project.
 
-## CLI reference
+![Clipforge Studio highlight review](<docs/assets/screens/Clipforge Studio highlight.png>)
 
-See [docs/CLI.md](docs/CLI.md) for terminal-first workflows, examples, and safety notes.
+### Film Studio
 
-Every command accepts `--root <workspace-path>` before the command. Without it, Clipforge uses the current directory. `--env-file <path>` explicitly loads credentials from a dotenv-style file without writing secrets into the project.
+Build an editable sequence from selected highlights, refine its order and cuts, preview the result, and render only when you are ready.
 
-| Command | Description | Options |
-| --- | --- | --- |
-| `init [folder]` | Create a local project. | `--interactive`, `--name <name>`, `--description <text>`, `--focus <text>`, `--clips-dir <folder>`, `--frame-interval <seconds>`, `--audio <yes\|no>`, `--transcription <yes\|no>`, `--min-duration <seconds>`, `--max-duration <seconds>` (`0` means unlimited), `--require-audio <yes\|no>` |
-| `doctor` | Check available dependencies; no installation or AI invocation. | `--json` |
-| `setup` | Plan or explicitly install optional local transcription/classification dependencies. | `--interactive`, `--transcription`, `--sound-classifier`, `--device <cpu\|cuda\|auto>`, `--scope <project\|user>`, `--dry-run`, `--yes` |
-| `analyze [file\|folder]` | Run local analysis. | `--agent [codex\|claude\|cursor\|deepseek\|openai\|anthropic]`, `--force` |
-| `dashboard` | Start the local dashboard. | `--port <1024-65535>` |
-| `agents` | Detect installed provider CLIs. | — |
-| `agent [provider]` | Show or set the legacy default provider. | `none`, `codex`, `claude`, `cursor`, `deepseek`, `openai`, or `anthropic`; `agent test [provider]` makes a real call |
-| `ai models` | Discover provider model IDs. Discovery does not verify access. | — |
-| `ai set <stage> <provider> [model]` | Set a provider/model for a stage. | Stages: `understanding`, `contextual`, `editing`, `critical`, `direction`; compatibility aliases: `clip`, `montage` |
-| `ai test <stage>` | Make a real provider connection test for a configured stage. | Same stages as `ai set` |
-| `prompts` | List editable project prompt files. | `show <name>` prints one prompt |
-| `suggest [provider]` | Generate an editable film proposal from stored highlights. | Any supported analysis provider |
-| `highlights` | List candidate highlights. | `--json` |
-| `approve <id>` / `reject <id>` | Change candidate review status. | — |
-| `project <name>` | Create a project from approved highlights. | — |
-| `projects` | List film projects. | — |
-| `render <project-id>` | Render an existing project explicitly. | — |
-| `search <phrase>` | Search timestamped transcript segments. | `--json` |
-| `skipped` | List clips skipped by pre-analysis filters. | `--json` |
-| `runs` | List recent analysis runs. | `--json` |
-| `logs [run-id]` | Print stage events for a run. | — |
-| `usage [run-id]` | Show provider-reported usage and clearly-labelled pricing estimates. | — |
+![Clipforge Studio Film Studio](<docs/assets/screens/Clipforge Studio montage.png>)
 
-`cursor` is detectable but does not have an analysis adapter. `--agent` without a provider uses the configured understanding profile. `--force` reprocesses eligible clips while preserving approved and rejected highlights.
-
-## Where Clipforge stores your work
-
-`clipforge init` creates this local layout:
+Your workspace remains self-contained:
 
 ```text
-project/
-  clips/                         original videos; never changed
+my-highlights/
+  clips/                         original recordings, never modified
   .clipforge/
-    config.json                  project and tool configuration
-    contexts.json                domain, editing, and film-direction contexts
-    context.md                  legacy creative brief; retained for compatibility
-    prompts/                     editable stage instructions
-    state.sqlite                 clips, reviews, projects, runs, and caches
-    artifacts/<clip-id>/         frames, transcripts, observations, AI traces
-    renders/<project-id>/        explicit FFmpeg exports
+    config.json                  project configuration
+    state.sqlite                 reviews, projects, and run history
+    artifacts/<clip-id>/         frames, signals, transcripts, AI traces
+    renders/<project-id>/        explicit MP4 exports
 ```
 
-If no stage profile is configured, the relevant stage inherits the default `agent` profile. Project prompts are created only when absent; Clipforge does not overwrite edits.
+## Running with AI from the dashboard
 
-Prompt names include:
+AI is recommended when you want Clipforge to produce more useful, context-aware suggestions. It can use sampled frames, optional transcripts and local media signals to identify complete actions, including setup and reaction, before proposing an edit. It is not a replacement for review and does not automatically render anything.
 
-- `understanding-base` → `prompts/understanding/base.md`
-- `understanding-contextual` → `prompts/understanding/contextual.md`
-- `editing-boundary-refinement` → `prompts/editing/boundary-refinement.md`
-- `clip-analysis`, `highlight-selection`, `montage`, `film-direction`, `film-regeneration`, and `agent-test`
+In the dashboard, open **AI adapters & models**, scan the available providers, choose a provider/model for the analysis stages, and run **Test clip analysis AI**. Then return to the project workflow and start analysis. This is the recommended route because setup, progress, errors, raw output, review, and rendering remain visible in one local interface.
 
-The dashboard labels each prompt by its job and describes the guardrail it controls before showing the raw editable text. Prompt files remain advanced project instructions: they guide optional AI calls, but schema validation and human approval remain enforced in code. All dashboard requests stay local.
+The terminal commands below are equivalent options for scripted or terminal-first workflows.
+
+### Installed Codex or Claude client
+
+Sign in to the provider's own CLI first, then use it as the configured provider. Codex example:
+
+```sh
+clipforge --root ./my-highlights ai set understanding codex
+clipforge --root ./my-highlights ai set editing codex
+clipforge --root ./my-highlights ai test understanding
+clipforge --root ./my-highlights analyze --agent
+```
+
+Replace `codex` with `claude` to use Claude's installed client. For an already configured provider, `clipforge analyze --agent codex` is also a convenient one-command override. Add `--force` only when you intentionally want to reprocess eligible clips; previously approved and rejected highlights are kept.
+
+### OpenAI, Anthropic, or DeepSeek API
+
+Set the provider key in your shell, or place it in a private dotenv-style file outside the workspace. Keys are never written to `.clipforge/config.json`.
+
+```text
+# /secure/clipforge.env
+OPENAI_API_KEY=your-key
+```
+
+Use that file explicitly, discover a model if needed, configure the stages, then make the test call:
+
+```sh
+clipforge --env-file /secure/clipforge.env --root ./my-highlights ai models
+clipforge --env-file /secure/clipforge.env --root ./my-highlights ai set understanding openai
+clipforge --env-file /secure/clipforge.env --root ./my-highlights ai set editing openai
+clipforge --env-file /secure/clipforge.env --root ./my-highlights ai test understanding
+clipforge --env-file /secure/clipforge.env --root ./my-highlights analyze --agent
+```
+
+Use `ANTHROPIC_API_KEY` with `anthropic`, or `DEEPSEEK_API_KEY` with `deepseek`, in the same way. You can append a discovered model ID to `ai set`, for example `ai set understanding openai <model-id>`.
+
+AI commands may send selected frames and analysis metadata to the chosen provider, consume quota, and save their prompt, result, and errors locally for inspection. Clipforge never silently falls back to a provider.
+
+## Fully local analysis
+
+Use the local path when you do not want any external provider call, or simply want to inspect basic candidate signals first:
+
+```sh
+clipforge --root ./my-highlights analyze
+clipforge --root ./my-highlights dashboard
+```
+
+It uses video metadata, sampled frames, audio activity, and scene changes to propose moments. These signals are not verified kills, explosions, or any other gameplay event, so the results are generally less context-aware than the AI workflow.
 
 ## Optional local enrichment
 
-Transcription and AST sound classification are disabled by default. Preview what setup would do:
+Transcription and AudioSet-based sound classification are disabled by default. Preview their setup first:
 
 ```sh
-clipforge setup --transcription --sound-classifier --dry-run
+clipforge --root ./my-highlights setup --transcription --sound-classifier --dry-run
 ```
 
 Run the plan only after reviewing it:
 
 ```sh
-clipforge setup --transcription --sound-classifier --yes
+clipforge --root ./my-highlights setup --transcription --sound-classifier --yes
 ```
 
-Setup uses an isolated project or user-scoped Python environment, never global `pip`. Initial model downloads can be large. Sound labels are rough AudioSet estimates and should never be treated as confirmed gameplay events.
+Setup uses an isolated Python environment, not global `pip`. It can download local models. Sound labels are rough estimates, not proof of an in-game event.
+
+## Common commands
+
+| Command | Purpose |
+| --- | --- |
+| `clipforge init [folder]` | Create a project workspace. |
+| `clipforge doctor` | Check dependencies without installing or invoking AI. |
+| `clipforge analyze [file\|folder]` | Run local analysis and create review candidates. |
+| `clipforge dashboard` | Open the local review dashboard on `127.0.0.1`. |
+| `clipforge highlights` | List candidate highlights. |
+| `clipforge approve <id>` | Approve a reviewed highlight. |
+| `clipforge project <name>` | Create a film from approved highlights. |
+| `clipforge render <project-id>` | Explicitly render an MP4 export. |
+| `clipforge runs` / `clipforge logs [run-id]` | Inspect processing progress and errors. |
+
+For all commands, examples, configuration, and troubleshooting, see the [CLI guide](docs/CLI.md).
+
+The CLI is ideal for setup, automation, and diagnostics. For day-to-day work on a project, start `clipforge dashboard`: it gives you one local place to manage provider settings, run and monitor analysis, inspect logs, review highlights, build a film, and render it.
 
 ## Privacy and safety
 
-- All project state, artifacts, and renders remain local by default.
-- Source videos are immutable; generated files live under `.clipforge/`.
-- The dashboard binds to `127.0.0.1`; do not expose it publicly.
-- Agent calls are explicit and auditable. Prompts, raw replies, execution traces, and errors are stored locally and may contain private material.
-- Rendering is explicit. Suggestions do not auto-approve highlights or create films.
+- The dashboard listens on `127.0.0.1` by default.
+- Generated files stay in `.clipforge/`; originals stay unchanged.
+- API keys are read from your environment or an explicit `--env-file`, never saved in project configuration.
+- `doctor` is diagnostic only. `setup` requires confirmation unless you intentionally pass `--yes`.
+- Clipforge never auto-approves suggestions or automatically renders a final film.
 
-## Known limitations
+## Current limitations
 
-- Candidate generation is not verified kill/explosion detection.
-- AI providers may not inspect frames equally well; model discovery is not an authorization check.
-- Browser playback compatibility depends on source codecs.
-- Rendering currently expects audio and normalizes output through FFmpeg.
-- Default CI should not perform paid or remote AI calls.
+- Candidate generation is a review aid, not reliable gameplay-event detection.
+- AI providers may differ in their ability to interpret sampled frames.
+- Browser playback depends on the source video's codec support.
+- Rendering currently expects source audio and uses FFmpeg to normalize output.
 
-License: MIT.
+## Development
+
+From a repository checkout:
+
+```sh
+npm install
+npm run ci
+```
+
+See [AGENTS.md](AGENTS.md) for project constraints and [docs/DEVELOPMENT_SANDBOX.md](docs/DEVELOPMENT_SANDBOX.md) for safe local end-to-end testing.
+
+## License
+
+[MIT](LICENSE)

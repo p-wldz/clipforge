@@ -2,7 +2,25 @@
   "name": "clipforge",
   "version": "0.15.0",
   "type": "module",
-  "description": "Local-first gameplay highlight pipeline with Codex, Claude and DeepSeek adapters",
+  "description": "Local-first CLI and dashboard for reviewing gameplay highlights and creating editable video montages",
+  "keywords": [
+    "video",
+    "gameplay",
+    "highlights",
+    "montage",
+    "clips",
+    "ffmpeg",
+    "local-first",
+    "cli"
+  ],
+  "homepage": "https://github.com/p-wldz/clipforge#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/p-wldz/clipforge.git"
+  },
+  "bugs": {
+    "url": "https://github.com/p-wldz/clipforge/issues"
+  },
   "files": [
     "dist",
     "README.md",
@@ -11,10 +29,16 @@
     "docs",
     ".agents",
     ".claude",
-    "tools"
+    "tools/audio_windowing.py",
+    "tools/classify_sound_ast.py",
+    "tools/transcribe_faster_whisper.py"
   ],
   "bin": {
     "clipforge": "./dist/cli.js"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
   },
   "scripts": {
     "dev": "tsx src/cli.ts",
