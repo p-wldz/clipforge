@@ -28,7 +28,7 @@
     "release:archive": "node scripts/create-release-archive.mjs",
     "release:archive:check": "node scripts/check-release-archive.mjs",
     "release:version:check": "node scripts/check-release-version.mjs",
-    "ci": "npm run typecheck && npm test && npm run build && node --check src/dashboard/app.js && npm run package:check",
+    "ci": "npm run typecheck && npm run build && npm test && node --check src/dashboard/app.js && npm run package:check",
     "prepublishOnly": "npm run ci"
   },
   "engines": {
