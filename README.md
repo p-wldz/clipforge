@@ -8,7 +8,7 @@ It is a review tool, not a reliable game-event detector. Audio activity and Audi
 
 Choose one installation route:
 
-- **npm / development:** Node.js 22.13 or newer, then install from npm or a checkout.
+- **npm / development:** Node.js 22.16 or newer, then install from npm or a checkout.
 - **Portable release archive:** download the archive matching your OS from GitHub Releases, verify its SHA-256 against `SHA256SUMS`, extract it, and put its directory on `PATH`. It bundles the Clipforge runtime, so npm is not required.
 
 Every route needs FFmpeg and FFprobe on `PATH` for analysis and rendering. Python 3 is optional for local transcription and sound classification; an installed Codex/Claude client or an explicit DeepSeek, OpenAI, or Anthropic API key is optional for AI stages.

@@ -10,7 +10,7 @@ as the npm package.
 
 The executable artifact should use Node's built-in Single Executable Application
 (SEA) mechanism after a feasibility spike. It avoids depending on an unmaintained
-third-party packager and is supported by Clipforge's Node 22.13+ baseline. SEA is
+third-party packager and is supported by Clipforge's Node 22.16+ baseline. SEA is
 still marked "Active development" by Node, so retain the npm distribution as a
 first-class, supported route and test the artifacts on every release.
 
