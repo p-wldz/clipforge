@@ -294,6 +294,7 @@ export async function analyze(
               name: config.project.name,
               description: config.project.description,
             },
+            sourceRevision: revision,
             duration: meta.duration,
             framesEverySeconds: config.analysis.frameIntervalSeconds,
             transcript: segments,
