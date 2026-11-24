@@ -32,7 +32,7 @@ Before Deep Action Analysis, an opt-in **Conversation Understanding** call group
 
 Optional domain interpretations are stored separately under `understanding/contexts/`. Project contexts live in `.clipforge/contexts.json` with independent `domain`, `editing`, and `filmDirection` fields. New stage profiles (`understanding`, `contextualUnderstanding`, `editing`, `filmDirection`) are optional; old workspaces continue to inherit `agent`, `clipAnalysis`, and `montage` settings.
 
-Transcript discovery is local: SQLite FTS5 indexes the current timestamped transcript segments after each successful transcription. Highlight ratings, categories, notes, favorites, and missed-moment ranges are user annotations in separate tables, so regenerating AI recommendations does not overwrite them.
+Transcript discovery is local: SQLite FTS5 indexes the current timestamped transcript segments after each successful transcription. Highlight ratings, categories, notes, favorites, and missed-moment ranges are user annotations in separate tables, so regenerating AI recommendations does not overwrite them. During an explicit AI reanalysis, saved review observations are supplied only to Contextual Editing as creative calibration; they never enter Conversation Understanding or Deep Action Analysis and therefore cannot become claimed media evidence.
 
 ## Why no queue or external DB?
 Single-user local processing. SQLite WAL is sufficient for metadata; artifacts are files. CLI operates one video at a time. Long-term direction: job table and worker process, resumable per-stage job state, parallel limits. Avoid Redis/Postgres until justified.

@@ -92,6 +92,10 @@ test('new projects create independent context and nested stage prompts while leg
       /entire timeline/i,
     );
     assert.equal(profileFor(config, 'editing').provider, config.agent.provider);
+    assert.match(
+      await readFile(promptPath(root, 'contextual-editing'), 'utf8'),
+      /creative calibration/i,
+    );
   } finally {
     await rm(root, { recursive: true, force: true });
   }

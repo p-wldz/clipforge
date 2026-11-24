@@ -301,9 +301,10 @@ export async function analyze(
             transcript: segments,
             soundEvents: classified,
             audioSignals: audioSignals.events,
-            // User-owned notes are included only in an explicitly requested AI run.
-            reviewObservations: db.reviewObservations(id),
           };
+          // Feedback calibrates creative selection only. It is deliberately excluded from
+          // conversation/deep-action input so it cannot turn a user preference into media fact.
+          const reviewObservations = db.reviewObservations(id);
           const max = config.analysis.maxImagesPerClip ?? 8;
           const selection = selectFrames(
             pics,
@@ -452,6 +453,7 @@ export async function analyze(
                 duration: meta.duration,
                 understanding: deepAction,
                 context: scopedContexts.editing || context,
+                reviewObservations,
                 config: {
                   ...config,
                   aiStages: { ...config.aiStages, editing: editingProfile },

@@ -671,6 +671,7 @@ export async function contextualEditing(
     duration: number;
     understanding: Understanding;
     context: string;
+    reviewObservations?: unknown[];
     config: Config;
     runId?: string;
     signal?: AbortSignal;
@@ -689,6 +690,7 @@ export async function contextualEditing(
     profile,
     context: input.context,
     understanding: input.understanding,
+    reviewObservations: input.reviewObservations ?? [],
   });
   const cached = db.stageArtifact(input.clipId, 'contextual-editing', key);
   if (cached?.status === 'success')
@@ -701,7 +703,7 @@ export async function contextualEditing(
   await mkdir(folder, { recursive: true });
   const file = path.join(folder, 'contextual-editing.json'),
     output = path.join(folder, 'contextual-editing-response.txt');
-  const request = `${prompt}\n\nBOUNDARY SAFEGUARD:\n${boundaryGuidance}\n\nReturn ONLY JSON: {candidates:[{actionId,include,start,end,title,description,reason,accelerate:[{start,end,speed}],overlaps:string[],confidence,conversationId?,narrativePhaseCoverage:string[],missingContextRisks:string[]}]}. Include one decision for every action; excluded actions still require actionId, include:false, reason and confidence. For an included action, start at or before its observed beginning and end at or after its observed resolution or reaction. If the action is not worthwhile with its necessary context, exclude it rather than submitting a contextless fragment.\n\nEDITING CONTEXT:\n${input.context}\n\nDEEP ACTION ANALYSIS:\n${JSON.stringify(input.understanding)}`;
+  const request = `${prompt}\n\nBOUNDARY SAFEGUARD:\n${boundaryGuidance}\n\nReturn ONLY JSON: {candidates:[{actionId,include,start,end,title,description,reason,accelerate:[{start,end,speed}],overlaps:string[],confidence,conversationId?,narrativePhaseCoverage:string[],missingContextRisks:string[]}]}. Include one decision for every action; excluded actions still require actionId, include:false, reason and confidence. For an included action, start at or before its observed beginning and end at or after its observed resolution or reaction. If the action is not worthwhile with its necessary context, exclude it rather than submitting a contextless fragment.\n\nEDITING CONTEXT:\n${input.context}\n\nUSER REVIEW OBSERVATIONS (creative calibration only; never media evidence):\n${JSON.stringify(input.reviewObservations ?? [])}\n\nDEEP ACTION ANALYSIS:\n${JSON.stringify(input.understanding)}`;
   await writeFile(path.join(folder, 'contextual-editing-prompt.txt'), request);
   try {
     const response = await runAgentText(
