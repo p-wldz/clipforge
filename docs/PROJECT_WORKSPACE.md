@@ -15,7 +15,7 @@
 1. Create a blank directory and run `clipforge init --interactive`.
 2. Put recordings in the configured clips directory.
 3. Open `clipforge dashboard`: it separately shows media files found in the configured folder and clips already recorded in its local database. Finding files does not analyze or alter them.
-4. `clipforge doctor` checks FFmpeg/ffprobe and optional tools without calling any LLM.
+4. `clipforge doctor` checks FFmpeg/ffprobe plus the optional Python tools without calling any LLM. It prints the exact `setup` command for each missing optional component; `clipforge setup all --dry-run` previews the complete local setup.
 5. `clipforge agents` lists installed Codex/Claude/Cursor commands. Installed does **not** mean authenticated or supported for analysis.
 6. Choose and test an AI provider in the dashboard before analysis when possible. Starting without AI requires confirmation because local heuristic candidates are less reliable and less context-aware; `clipforge analyze --agent codex` (or `--agent claude`) remains available from the CLI.
 7. Review candidates in `clipforge dashboard`, adjust times, approve, and render.

@@ -10,6 +10,7 @@ import {
   chooseTranscriptionDevice,
 } from '../dist/core/setup.js';
 import { initWorkspace } from '../dist/core/paths.js';
+import { doctor } from '../dist/core/doctor.js';
 
 test('cross-platform venv interpreter paths', () => {
   assert.equal(
@@ -80,6 +81,22 @@ test('sound classifier can be planned independently from Whisper', async () => {
       result.plans.some((p) => p.kind === 'transcription'),
       false,
     );
+  } finally {
+    await rm(root, { force: true, recursive: true });
+  }
+});
+
+test('doctor always reports optional Python tools and their setup commands', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'clipforge-doctor-'));
+  try {
+    await initWorkspace(root);
+    const result = await doctor(root);
+    assert.equal(typeof result.tools.python.installed, 'boolean');
+    assert.equal(typeof result.tools.transcription.installed, 'boolean');
+    assert.equal(typeof result.tools.soundClassifier.installed, 'boolean');
+    assert.equal(result.optional.transcription.setup, 'clipforge setup --transcription');
+    assert.equal(result.optional.soundClassifier.setup, 'clipforge setup --sound-classifier');
+    assert.equal(result.optional.all, 'clipforge setup all');
   } finally {
     await rm(root, { force: true, recursive: true });
   }

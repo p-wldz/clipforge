@@ -1,48 +1,50 @@
-import { classifierPython } from './setup.js';
+import { classifierPython, detectPython, venvPython } from './setup.js';
 import { checkTool } from './process.js';
 import { detectAgents } from './providers.js';
 import { loadConfig } from './paths.js';
 export async function doctor(root: string) {
   const config = await loadConfig(root);
-  const tools = await Promise.all([
+  const python = await detectPython();
+  const [ffmpeg, ffprobe, transcription, soundClassifier] = await Promise.all([
     checkTool('ffmpeg'),
     checkTool('ffprobe'),
-    ...(config.soundClassifier.enabled
-      ? [
-          checkTool(config.soundClassifier.command || classifierPython(root), [
-            '-c',
-            'import torch, torchaudio, transformers;print("classifier ready")',
-          ]),
-        ]
-      : []),
-    ...(config.transcription.enabled
-      ? [
-          config.transcription.provider === 'faster-whisper'
-            ? checkTool(config.transcription.command, [
-                '-c',
-                'import faster_whisper; print("faster-whisper available")',
-              ])
-            : checkTool(config.transcription.command, ['--help']),
-        ]
-      : []),
+    checkTool(venvPython(root), ['-c', 'import faster_whisper; print("faster-whisper available")']),
+    checkTool(classifierPython(root), [
+      '-c',
+      'import torch, torchaudio, transformers;print("classifier ready")',
+    ]),
   ]);
-  const labels = [
-    'ffmpeg',
-    'ffprobe',
-    ...(config.soundClassifier.enabled ? ['soundClassifier'] : []),
-    ...(config.transcription.enabled ? ['transcription'] : []),
-  ];
+  const pythonTool = python
+    ? await checkTool(python.command, [...python.prefix, '--version'])
+    : { installed: false, error: 'Python 3 not found' };
   return {
     node: process.version,
     provider: config.agent.provider,
     tools: {
-      ...Object.fromEntries(labels.map((x, i) => [x, tools[i]])),
+      ffmpeg,
+      ffprobe,
+      python: pythonTool,
+      transcription,
+      soundClassifier,
       ...(await detectAgents()),
     },
+    optional: {
+      transcription: {
+        enabled: config.transcription.enabled,
+        installed: transcription.installed,
+        setup: 'clipforge setup --transcription',
+      },
+      soundClassifier: {
+        enabled: config.soundClassifier.enabled,
+        installed: soundClassifier.installed,
+        setup: 'clipforge setup --sound-classifier',
+      },
+      all: 'clipforge setup all',
+    },
     ready:
-      !!tools[0]?.installed &&
-      !!tools[1]?.installed &&
-      (!config.soundClassifier.enabled || !!tools[2]?.installed) &&
-      (!config.transcription.enabled || !!tools[config.soundClassifier.enabled ? 3 : 2]?.installed),
+      ffmpeg.installed &&
+      ffprobe.installed &&
+      (!config.soundClassifier.enabled || soundClassifier.installed) &&
+      (!config.transcription.enabled || transcription.installed),
   };
 }

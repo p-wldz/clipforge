@@ -104,6 +104,9 @@ async function main() {
         : {}),
     };
     console.log('Initialized:', await initWorkspace(destination, options));
+    console.log(
+      `\nNext steps:\n  1. Add recordings to ${path.join(destination, options.mediaDir ?? 'clips')}\n  2. Check prerequisites: clipforge --root ${destination} doctor\n  3. Optional local transcription and sound labels: clipforge --root ${destination} setup all --dry-run\n  4. Start the dashboard: clipforge --root ${destination} dashboard`,
+    );
     return;
   }
   if (!cmd || cmd === 'help' || cmd === '--help') {
@@ -111,7 +114,7 @@ async function main() {
       usage.replace(
         'Global option: --root <workspace path>',
         'Global options: --root <workspace path>  --env-file <credentials file>',
-      ),
+      ).replace('setup [--interactive]', 'setup [all|--all] [--interactive]'),
     );
     return;
   }
@@ -280,15 +283,17 @@ async function main() {
         throw new Error('--scope must be project or user');
       if (setupDevice && !['cpu', 'cuda', 'auto'].includes(setupDevice))
         throw new Error('--device must be cpu, cuda, or auto');
+      const all = flags.has('--all') || args[0] === 'all';
       const interactive =
         (flags.has('--interactive') ||
           (!flags.has('--transcription') &&
             !flags.has('--sound-classifier') &&
+            !all &&
             !flags.has('--yes') &&
             !flags.has('--dry-run'))) &&
         process.stdin.isTTY;
-      let transcription = flags.has('--transcription');
-      let soundClassifier = flags.has('--sound-classifier');
+      let transcription = all || flags.has('--transcription');
+      let soundClassifier = all || flags.has('--sound-classifier');
       if (interactive) {
         const rl = createInterface({
           input: process.stdin,
