@@ -7,6 +7,15 @@ semantic versioning; version tags are `v<package.json version>`.
 
 - No unreleased entries yet.
 
+## 0.16.0
+
+- Added a local quality benchmark for highlight proposals, including precision, recall, boundary-error, and duplicate metrics in the CLI and dashboard.
+- Added safe single-clip reanalysis that preserves review feedback and missed moments as editing-only calibration.
+- Detect replaced source videos and invalidate derived AI analysis without modifying originals.
+- Improved the dashboard analysis workflow with local-media discovery, clearer run ownership and progress, and protection against concurrent jobs.
+- Added sound-classifier calibration controls, reviewable sound-event evidence, and visual frame attachments for Deep Action Analysis.
+- Improved optional-tool setup diagnostics and release documentation.
+
 ## 0.15.4
 
 - Added a GitHub Packages mirror published as `@p-wldz/clipforge`.

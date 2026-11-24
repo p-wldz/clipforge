@@ -1,6 +1,6 @@
 {
   "name": "clipforge",
-  "version": "0.15.4",
+  "version": "0.16.0",
   "type": "module",
   "description": "Local-first CLI and dashboard for reviewing gameplay highlights and creating editable video montages",
   "keywords": [
