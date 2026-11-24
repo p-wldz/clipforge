@@ -159,7 +159,13 @@ async function loadQualityBenchmark() {
     return;
   }
   const report = result.report;
+  const missed = report.unmatchedExpectedIds.slice(0, 5);
+  const extras = report.unmatchedHighlightIds.slice(0, 5);
   status.textContent = `Precision ${report.precision ?? '—'} · Recall ${report.recall ?? '—'} · Boundary error ${report.meanBoundaryErrorSeconds ?? '—'}s · ${report.duplicateProposals} duplicate proposal(s) · ${report.expectedMoments} labeled moment(s).`;
+  if (missed.length)
+    status.textContent += ` Missed: ${missed.join(', ')}${report.unmatchedExpectedIds.length > missed.length ? '…' : ''}.`;
+  if (extras.length)
+    status.textContent += ` Extra proposals: ${extras.join(', ')}${report.unmatchedHighlightIds.length > extras.length ? '…' : ''}.`;
   button.hidden = true;
 }
 const clipOf = (h) => clips.find((c) => c.id === h?.clip_id);
