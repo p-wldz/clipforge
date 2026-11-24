@@ -211,8 +211,7 @@ export async function understandClip(options: {
   timeoutMs?: number;
 }): Promise<{ analysis: ClipUnderstanding; trace: AgentTrace }> {
   const { provider, model, workspace, folder, images, payload, onEvent } = options;
-  if (!isAnalysisProvider(provider))
-    throw new Error(`Unsupported agent: ${provider}`);
+  if (!isAnalysisProvider(provider)) throw new Error(`Unsupported agent: ${provider}`);
   const aiDir = path.join(folder, 'ai');
   await mkdir(aiDir, { recursive: true });
   const promptPath = path.join(aiDir, 'prompt.txt'),
@@ -241,11 +240,24 @@ export async function understandClip(options: {
     let responseText = '';
     onEvent?.(`Invoking ${provider}${model ? ` (${model})` : ''} with ${images.length} frames`);
     if (provider === 'deepseek' || provider === 'openai' || provider === 'anthropic') {
-      const result = provider === 'deepseek' ? await deepseekChat(prompt, {
-        model,
-        images,
-        timeoutMs: options.timeoutMs ?? 10 * 60 * 1000,
-      }) : provider === 'openai' ? await openaiResponses(prompt, { model, images, timeoutMs: options.timeoutMs ?? 10 * 60 * 1000 }) : await anthropicMessages(prompt, { model, images, timeoutMs: options.timeoutMs ?? 10 * 60 * 1000 });
+      const result =
+        provider === 'deepseek'
+          ? await deepseekChat(prompt, {
+              model,
+              images,
+              timeoutMs: options.timeoutMs ?? 10 * 60 * 1000,
+            })
+          : provider === 'openai'
+            ? await openaiResponses(prompt, {
+                model,
+                images,
+                timeoutMs: options.timeoutMs ?? 10 * 60 * 1000,
+              })
+            : await anthropicMessages(prompt, {
+                model,
+                images,
+                timeoutMs: options.timeoutMs ?? 10 * 60 * 1000,
+              });
       responseText = result.text;
       trace.model = result.model;
       trace.usage = result.usage;
@@ -335,7 +347,11 @@ export async function understandClip(options: {
   }
 }
 
-export function codexTextArgs(model: string | undefined, outputPath: string) {
+export function codexTextArgs(
+  model: string | undefined,
+  outputPath: string,
+  images: string[] = [],
+) {
   return [
     'exec',
     '--json',
@@ -345,6 +361,7 @@ export function codexTextArgs(model: string | undefined, outputPath: string) {
     ...(model ? ['--model', model] : []),
     '-o',
     outputPath,
+    ...images.flatMap((image) => ['--image', image]),
     '-',
   ];
 }
@@ -360,6 +377,7 @@ export async function runAgentText(
   onUsage?: (usage: TokenUsage | null, providerReportedUsd?: number | null) => void,
   signal?: AbortSignal,
   onEvent?: (message: string) => void,
+  images: string[] = [],
 ): Promise<string> {
   const started = Date.now();
   onEvent?.(
@@ -367,17 +385,23 @@ export async function runAgentText(
   );
   try {
     if (provider === 'deepseek' || provider === 'openai' || provider === 'anthropic') {
-      const result = provider === 'deepseek'
-        ? await deepseekChat(prompt, { model, timeoutMs, signal })
-        : provider === 'openai' ? await openaiResponses(prompt, { model, timeoutMs, signal }) : await anthropicMessages(prompt, { model, timeoutMs, signal });
+      const result =
+        provider === 'deepseek'
+          ? await deepseekChat(prompt, { model, images, timeoutMs, signal })
+          : provider === 'openai'
+            ? await openaiResponses(prompt, { model, images, timeoutMs, signal })
+            : await anthropicMessages(prompt, { model, images, timeoutMs, signal });
       onUsage?.(result.usage);
       await writeFile(outputPath, result.text);
-      onEvent?.(`${provider}: completed in ${Date.now() - started}ms; response=${result.text.length} chars`);
+      onEvent?.(
+        `${provider}: completed in ${Date.now() - started}ms; response=${result.text.length} chars`,
+      );
       return result.text;
     }
     if (provider === 'codex') {
       onEvent?.('codex: exec --json, sandbox=read-only, JSON validated by the stage parser');
-      const output = await run('codex', codexTextArgs(model, outputPath), {
+      if (images.length) onEvent?.(`codex: attaching ${images.length} image(s) via --image`);
+      const output = await run('codex', codexTextArgs(model, outputPath, images), {
         cwd: workspace,
         input: prompt,
         timeoutMs,

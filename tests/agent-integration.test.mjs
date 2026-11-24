@@ -23,6 +23,23 @@ test('Codex text calls rely on prompt JSON plus the stage parser, not a generic 
   ]);
 });
 
+test('Codex text calls attach selected frames when a stage requests vision', () => {
+  assert.deepEqual(codexTextArgs(undefined, 'response.json', ['frame-1.jpg', 'frame-2.jpg']), [
+    'exec',
+    '--json',
+    '--skip-git-repo-check',
+    '--sandbox',
+    'read-only',
+    '-o',
+    'response.json',
+    '--image',
+    'frame-1.jpg',
+    '--image',
+    'frame-2.jpg',
+    '-',
+  ]);
+});
+
 test(
   'mock Codex subprocess smoke test and montage proposal end-to-end',
   { skip: process.platform === 'win32' },
