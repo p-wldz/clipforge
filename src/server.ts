@@ -1,6 +1,6 @@
 import http from 'node:http';
 import path from 'node:path';
-import { mkdir, readFile, stat, writeFile, rm } from 'node:fs/promises';
+import { mkdir, readFile, readdir, stat, writeFile, rm } from 'node:fs/promises';
 import { createReadStream } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { Store } from './core/db.js';
@@ -25,11 +25,14 @@ import { contexts } from './pipeline/staged-ai.js';
 import { validateCatalog } from './core/usage.js';
 import { AppError, errorLogEntry, errorStatus, publicError } from './core/errors.js';
 import { analysisProviders, isAnalysisProvider, providerInfo } from './core/providers.js';
-import {
-  browserPreviewMetadataPath,
-  browserPreviewPath,
-} from './core/browser-playback.js';
+import { browserPreviewMetadataPath, browserPreviewPath } from './core/browser-playback.js';
 import { run } from './core/process.js';
+import {
+  evaluateHighlights,
+  evaluationFixturePath,
+  evaluationTemplate,
+  loadEvaluationFixture,
+} from './pipeline/evaluation.js';
 const dashboardRoot = fileURLToPath(new URL('./dashboard/', import.meta.url));
 const contentTypes: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
@@ -40,6 +43,7 @@ const contentTypes: Record<string, string> = {
   '.mp4': 'video/mp4',
   '.webm': 'video/webm',
 };
+const videoExtensions = new Set(['.mp4', '.mkv', '.mov', '.webm']);
 async function jsonBody(req: http.IncomingMessage) {
   let buf = '';
   for await (const part of req) {
@@ -119,8 +123,103 @@ export function startServer(root: string, port: number, host = '127.0.0.1'): Das
     try {
       const url = new URL(req.url ?? '/', `http://${host}:${port}`);
       const parts = url.pathname.split('/').filter(Boolean);
+      if (url.pathname === '/api/evaluation' && req.method === 'GET') {
+        const file = evaluationFixturePath(root);
+        try {
+          const fixture = await loadEvaluationFixture(root);
+          return send(res, 200, {
+            configured: true,
+            fixturePath: file,
+            report: evaluateHighlights(fixture, db.highlights()),
+          });
+        } catch (error) {
+          if ((error as Error).message !== 'No evaluation fixture. Run: clipforge evaluate --init')
+            throw error;
+          return send(res, 200, {
+            configured: false,
+            fixturePath: file,
+            message:
+              'Create a local benchmark template, add labeled moments, then refresh metrics.',
+          });
+        }
+      }
+      if (url.pathname === '/api/evaluation/init' && req.method === 'POST') {
+        const file = evaluationFixturePath(root);
+        try {
+          await readFile(file, 'utf8');
+          return send(res, 409, { error: 'Evaluation fixture already exists' });
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+        }
+        await writeFile(file, JSON.stringify(evaluationTemplate, null, 2) + '\n', 'utf8');
+        return send(res, 201, { fixturePath: file });
+      }
+      if (url.pathname === '/api/evaluation/moments' && req.method === 'POST') {
+        const input = await jsonBody(req);
+        const start = input.start;
+        const end = input.end;
+        if (
+          typeof input.clipId !== 'string' ||
+          typeof start !== 'number' ||
+          typeof end !== 'number' ||
+          !Number.isFinite(start) ||
+          !Number.isFinite(end) ||
+          start < 0 ||
+          end <= start ||
+          (input.label !== undefined && (typeof input.label !== 'string' || input.label.length > 500))
+        )
+          throw new Error('Invalid evaluation moment');
+        const clip = db.clip(input.clipId);
+        if (!clip || end > clip.duration + 0.05) throw new Error('Invalid evaluation moment');
+        const fixture = await loadEvaluationFixture(root);
+        if (
+          fixture.moments.some(
+            (entry) => entry.clipId === clip.id && entry.start === start && entry.end === end,
+          )
+        )
+          return send(res, 409, { error: 'This benchmark range already exists' });
+        const moment = {
+          id: `expected-${newId()}`,
+          clipId: clip.id,
+          start,
+          end,
+          ...(typeof input.label === 'string' && input.label.trim()
+            ? { label: input.label.trim() }
+            : {}),
+        };
+        fixture.moments = fixture.moments
+          .filter((entry) => entry.id !== 'example-moment')
+          .concat(moment);
+        await writeFile(evaluationFixturePath(root), JSON.stringify(fixture, null, 2) + '\n', 'utf8');
+        return send(res, 201, moment);
+      }
+      if (url.pathname === '/api/media/inventory' && req.method === 'GET') {
+        const config = await loadConfig(root);
+        const mediaPath = path.resolve(root, config.mediaDir);
+        try {
+          const entries = await readdir(mediaPath, { withFileTypes: true });
+          return send(res, 200, {
+            mediaDir: config.mediaDir,
+            exists: true,
+            files: entries
+              .filter(
+                (entry) =>
+                  entry.isFile() && videoExtensions.has(path.extname(entry.name).toLowerCase()),
+              )
+              .map((entry) => entry.name)
+              .sort((a, b) => a.localeCompare(b)),
+          });
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+          return send(res, 200, { mediaDir: config.mediaDir, exists: false, files: [] });
+        }
+      }
       if (url.pathname === '/api/ai/providers' && req.method === 'GET')
-        return send(res, 200, analysisProviders.map((id) => ({ id, ...providerInfo[id] })));
+        return send(
+          res,
+          200,
+          analysisProviders.map((id) => ({ id, ...providerInfo[id] })),
+        );
       if (url.pathname === '/api/ai/pricing' && req.method === 'GET') {
         const config = await loadConfig(root);
         return send(res, 200, config.pricing ?? {});
@@ -224,8 +323,11 @@ export function startServer(root: string, port: number, host = '127.0.0.1'): Das
           {
             withAgent: provider !== 'none',
             provider:
-              provider === 'none' ? undefined : (provider as 'codex' | 'claude' | 'deepseek' | 'openai'),
+              provider === 'none'
+                ? undefined
+                : (provider as 'codex' | 'claude' | 'deepseek' | 'openai'),
             force: input.force,
+            runOwner: 'dashboard',
             signal: controller.signal,
           },
           () => {},
@@ -242,6 +344,89 @@ export function startServer(root: string, port: number, host = '127.0.0.1'): Das
                   ? {
                       error: `${result.warnings} warnings; ${result.failedFiles} failed files`,
                     }
+                  : {}),
+              });
+            },
+            (error) => {
+              Object.assign(job, {
+                status: controller.signal.aborted ? 'cancelled' : 'failed',
+                error: (error as Error).message,
+              });
+            },
+          )
+          .finally(() => {
+            analysisStarting = false;
+          });
+        return send(res, 202, { jobId, status: 'running' });
+      }
+      if (
+        parts[0] === 'api' &&
+        parts[1] === 'clips' &&
+        parts[2] &&
+        parts[3] === 'reanalyze' &&
+        parts.length === 4 &&
+        req.method === 'POST'
+      ) {
+        if (
+          analysisStarting ||
+          [...activeAnalysisJobs.values()].some((j) => j.status === 'running')
+        )
+          return send(res, 409, { error: 'Analysis already running in this dashboard' });
+        if (
+          db
+            .runs()
+            .some(
+              (r: any) =>
+                r.status === 'running' && Date.now() - Date.parse(r.started_at) < 60 * 60 * 1000,
+            )
+        )
+          return send(res, 409, {
+            error: 'An analysis run is already active. Check Pipeline progress.',
+          });
+        const input = await jsonBody(req);
+        if (input.reset !== true)
+          throw new Error('Reanalyzing one clip requires explicit reset confirmation');
+        const clip = db.clip(parts[2]);
+        if (!clip) throw new Error('Clip not found');
+        const config = await loadConfig(root);
+        const provider =
+          input.provider ??
+          config.aiStages?.understanding?.provider ??
+          config.aiStages?.clipAnalysis?.provider ??
+          config.agent.provider;
+        if (provider !== 'none' && !isAnalysisProvider(provider))
+          throw new Error('Unsupported analysis provider');
+        db.resetClipHighlights(clip.id);
+        const jobId = newId();
+        analysisStarting = true;
+        const controller = new AbortController();
+        const job: AnalysisJob = { status: 'running', controller };
+        activeAnalysisJobs.set(jobId, job);
+        job.completion = analyze(
+          root,
+          clip.source_path,
+          {
+            withAgent: provider !== 'none',
+            provider:
+              provider === 'none'
+                ? undefined
+                : (provider as 'codex' | 'claude' | 'deepseek' | 'openai'),
+            force: true,
+            runOwner: 'dashboard',
+            signal: controller.signal,
+          },
+          () => {},
+        )
+          .then(
+            (result) => {
+              Object.assign(job, {
+                status: controller.signal.aborted
+                  ? 'cancelled'
+                  : result.warnings > 0
+                    ? 'completed_with_warnings'
+                    : 'completed',
+                ...(result.warnings > 0
+                  ? { error: `${result.warnings} warnings; ${result.failedFiles} failed files` }
                   : {}),
               });
             },
@@ -315,11 +500,15 @@ export function startServer(root: string, port: number, host = '127.0.0.1'): Das
         req.method === 'POST'
       ) {
         const run = db.runs().find((entry: any) => entry.id === parts[3]) as
-          | { id: string; status: string }
+          | { id: string; status: string; owner?: 'cli' | 'dashboard' }
           | undefined;
         if (!run) return send(res, 404, { error: 'Analysis run not found' });
         if (run.status !== 'running')
           return send(res, 409, { error: 'Analysis run is not running' });
+        if (run.owner !== 'dashboard')
+          return send(res, 409, {
+            error: 'Only an abandoned dashboard analysis record can be cleared here.',
+          });
         db.finishRun(
           run.id,
           'cancelled',
@@ -655,8 +844,7 @@ export function startServer(root: string, port: number, host = '127.0.0.1'): Das
         const stage = input.stage === 'montage' ? 'montage' : 'clipAnalysis';
         const profile = config.aiStages?.[stage] ?? config.agent;
         const provider = input.provider ?? profile.provider;
-        if (!isAnalysisProvider(provider))
-          throw new Error('Select a supported AI provider');
+        if (!isAnalysisProvider(provider)) throw new Error('Select a supported AI provider');
         // Explicit action only, never called by polling.
         const result = await smokeTestAgent(
           root,
@@ -1045,8 +1233,7 @@ export function startServer(root: string, port: number, host = '127.0.0.1'): Das
       const path = (req.url ?? '/').split('?')[0] ?? '/';
       // Do not log request bodies, headers, query strings, or stack traces.
       console.error(errorLogEntry({ requestId, method: req.method, path, error: e }));
-      if (!res.headersSent)
-        send(res, errorStatus(e), { ...publicError(e), requestId });
+      if (!res.headersSent) send(res, errorStatus(e), { ...publicError(e), requestId });
       else res.destroy();
     } finally {
       try {

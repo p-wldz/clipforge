@@ -1,7 +1,7 @@
 # Contracts and invariants
 
 ## Workspace
-`.clipforge/config.json` is JSON version 1. Paths `clips/` and `.clipforge/` are relative to workspace unless absolute. `artifacts/<stable clip id>/` stores metadata, frames, audio-activity, audio-signals, scene-changes, candidate-signals, optional transcript and highlight proposals. Scene changes, volume peaks, speech windows, and classifier events are local evidence only, never verified gameplay events. A source video's ID is a SHA-256 of its resolved absolute path, truncated to 16 hex digits; moving source invalidates path identity.
+`.clipforge/config.json` is JSON version 1. Paths `clips/` and `.clipforge/` are relative to workspace unless absolute. `artifacts/<stable clip id>/` stores metadata, frames, audio-activity, audio-signals, scene-changes, candidate-signals, optional transcript and highlight proposals. Scene changes, volume peaks, speech windows, and classifier events are local evidence only, never verified gameplay events. A source video's ID is a SHA-256 of its resolved absolute path, truncated to 16 hex digits; moving source invalidates path identity. A separate local source revision derives from resolved path, byte size, and modification time; a changed revision invalidates generated artifacts and candidates while preserving user feedback as review observations.
 
 ## AI providers
 `codex` and `claude` use an explicitly installed, signed-in OS client. `deepseek`, `openai`, and `anthropic` use only their explicit environment keys (`DEEPSEEK_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`); keys are never persisted in workspace configuration. Provider support and authentication mode are defined in `src/core/providers.ts`; a provider catalog is not proof of access, so a real smoke test remains required.
@@ -11,17 +11,24 @@
 - `highlights(id, clip_id, start, end, title, description, score, status, origin, created_at)`
 - `projects(id, name, created_at)` and `project_items(project_id, highlight_id, position)`
 - `stage_artifacts(clip_id, stage, cache_key, ...)` stores immutable, cache-keyed Deep Action, contextual editing, and critical-review payloads. A failed optional stage is recorded rather than silently reused. Deep Action entries contain uniquely identified complete actions, narrative phases, timestamped evidence, and uncertainty; contextual decisions must decide every action exactly once.
+- Deep Action receives the bounded selected frames as direct provider image inputs where the provider supports them. Its local `understanding/vision-input.json` records the requested attachment count, provider, transport and image paths for diagnosis; Contextual Editing consumes the resulting evidence and does not resend source frames.
 - `stage_artifacts` also stores `conversation-understanding` payloads. Conversation IDs, `utt-*` transcript IDs, and supplied event IDs are stable only within the associated clip artifact; relationships must reference those IDs, include evidence, confidence, and a reason. Transcripts remain unchanged.
 - `highlight_sets(context_key, cache_key)` and `highlight_set_items(...)` retain editing candidates per creative context. They never delete approved or rejected highlight rows.
 - `transcript_segments` has a workspace-local FTS5 index refreshed atomically with each transcript revision; normal search never returns superseded segment rows.
 - `highlight_feedback` and `missed_moments` are user-owned annotations, separate from generated highlights and retained when AI candidates are regenerated.
+- `analysis_runs.owner` distinguishes `cli` and `dashboard` runs. A dashboard can clear only an abandoned dashboard record; starting a dashboard never mutates a running record, because another local dashboard process may still own it.
 
 Highlight `status`: `pending_review | approved | rejected`. `origin`: `heuristic | codex | claude`. Time units are seconds, start inclusive, end exclusive. Scores 0–100; heuristic score 50 represents an unverified candidate.
+
+`analysis.candidatePreRollSeconds` and `candidatePostRollSeconds` add optional review context to generated heuristic and AI candidate boundaries, clipped to source duration. They never modify a user-saved cut. Resetting one clip preserves its user feedback as local clip-level review observations while removing generated highlights and their montage references.
+
+`.clipforge/evaluation.json` is an optional, local version-1 benchmark fixture. It contains manually labeled `{id,clipId,start,end,label?}` moments and is never uploaded. `clipforge evaluate` matches proposals one-to-one using IoU 0.2, then reports precision, recall, mean boundary error, duplicates, and unmatched IDs.
 
 For AI-derived highlights, an included Deep Action's saved interval must include its observed `beginning` phase and its `reaction` phase when present (otherwise its `resolution`, otherwise the action end). This is a non-destructive narrative-completeness guard; acceleration remains an editorial proposal, not an alteration of source media.
 
 ## HTTP API
 - `GET /api/clips`
+- `GET /api/evaluation` returns the local benchmark report when `.clipforge/evaluation.json` is configured; `POST /api/evaluation/init` explicitly creates its editable template and never overwrites one; `POST /api/evaluation/moments` appends one manually labeled, range-validated expected moment for an indexed clip.
 - `GET /api/highlights`
 - `PATCH /api/highlights/:id` keys start/end/title/description/status
 - `GET /api/projects`
@@ -32,7 +39,7 @@ For AI-derived highlights, an included Deep Action's saved interval must include
 - `GET /thumbnail/:clipId`
 - `POST /api/analysis/jobs/:jobId/cancel` cooperatively cancels a dashboard analysis. In-flight agent subprocesses are terminated; local stages stop before the next clip.
 - `POST /api/analysis/jobs/active/cancel` cancels the dashboard's active analysis without requiring a browser-held job ID. It never claims to stop a separately run CLI process.
-- `POST /api/analysis/runs/:runId/cancel` explicitly clears an abandoned `running` record after its dashboard process has exited. It never terminates a separately run CLI process.
+- `POST /api/analysis/runs/:runId/cancel` explicitly clears an abandoned dashboard `running` record after its process has exited. It rejects CLI-owned records and never terminates a separately run CLI process.
 
 ## Highlight deletion
 

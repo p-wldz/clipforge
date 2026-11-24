@@ -39,9 +39,11 @@ clipforge --root ./my-highlights render <project-id>
 | --- | --- | --- |
 | `help` | Prints the built-in command summary. | `clipforge help` |
 | `init [folder]` | Creates a local workspace. | Supports `--interactive`, `--name`, `--description`, `--focus`, `--clips-dir`, `--frame-interval`, `--audio`, `--transcription`, `--min-duration`, `--max-duration`, and `--require-audio`. |
-| `doctor [--json]` | Checks local tooling and configuration. | Read-only: never installs software or invokes an AI. |
-| `setup` | Previews or installs optional transcription and sound-classifier tooling. | `clipforge setup --transcription --sound-classifier --dry-run`; use `--yes` only after reviewing the plan. Supports `--interactive`, `--device cpu\|cuda\|auto`, and `--scope project\|user`. |
+| `doctor [--json]` | Checks local tooling and configuration. | Read-only: never installs software or invokes an AI. It always reports optional Python-tool status and suggested setup commands. |
+| `setup` | Previews or installs optional transcription and sound-classifier tooling. | `clipforge setup all --dry-run` previews both tools; use `--yes` only after reviewing the plan. Supports `--interactive`, `--device cpu\|cuda\|auto`, and `--scope project\|user`. |
 | `analyze [file\|folder]` | Runs local candidate analysis. | `clipforge analyze`; `--force` reprocesses eligible clips while retaining approved/rejected highlights. Add any supported `--agent` provider only for an explicit AI run. |
+| `reanalyze <clip-id> [--reset]` | Re-runs one indexed clip. | `--reset` removes that clip's generated highlights and project references while preserving feedback as local review observations; add `--agent` only for an explicit AI run. |
+| `evaluate [--init]` | Reports local highlight-quality metrics against a hand-labelled fixture. | `clipforge evaluate --init` creates `.clipforge/evaluation.json`; edit it with clip IDs and timestamped expected moments, then run `clipforge evaluate`. |
 | `dashboard [--port 4173]` | Runs the local web UI at `127.0.0.1`. | Shows a one-line terminal status. Ctrl+C stops dashboard-owned analysis and closes the server. |
 | `agents` | Lists detected provider CLIs. | Detection does not prove sign-in or model access. |
 | `agent [provider]` | Shows or sets the legacy default provider. | Providers: `none`, `codex`, `claude`, `cursor`, `deepseek`, `openai`, `anthropic`. `cursor` is detectable but cannot analyze clips. |

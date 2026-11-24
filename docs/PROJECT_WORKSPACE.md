@@ -14,10 +14,11 @@
 
 1. Create a blank directory and run `clipforge init --interactive`.
 2. Put recordings in the configured clips directory.
-3. `clipforge doctor` checks FFmpeg/ffprobe and optional tools without calling any LLM.
-4. `clipforge agents` lists installed Codex/Claude/Cursor commands. Installed does **not** mean authenticated or supported for analysis.
-5. Choose `clipforge analyze --agent codex` (or `--agent claude`), or omit `--agent` for local heuristic analysis.
-6. Review candidates in `clipforge dashboard`, adjust times, approve, and render.
+3. Open `clipforge dashboard`: it separately shows media files found in the configured folder and clips already recorded in its local database. Finding files does not analyze or alter them.
+4. `clipforge doctor` checks FFmpeg/ffprobe plus the optional Python tools without calling any LLM. It prints the exact `setup` command for each missing optional component; `clipforge setup all --dry-run` previews the complete local setup.
+5. `clipforge agents` lists installed Codex/Claude/Cursor commands. Installed does **not** mean authenticated or supported for analysis.
+6. Choose and test an AI provider in the dashboard before analysis when possible. Starting without AI requires confirmation because local heuristic candidates are less reliable and less context-aware; `clipforge analyze --agent codex` (or `--agent claude`) remains available from the CLI.
+7. Review candidates in `clipforge dashboard`, adjust times, approve, and render.
 
 New workspaces have no maximum clip duration by default: every eligible recording is probed and analyzed. Set `analysis.maxDurationSeconds` only when deliberately limiting processing. AI analysis uses timestamped screenshots across each full clip and favors complete setup-to-reaction sequences over isolated peaks.
 

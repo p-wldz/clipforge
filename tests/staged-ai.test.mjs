@@ -92,6 +92,10 @@ test('new projects create independent context and nested stage prompts while leg
       /entire timeline/i,
     );
     assert.equal(profileFor(config, 'editing').provider, config.agent.provider);
+    assert.match(
+      await readFile(promptPath(root, 'contextual-editing'), 'utf8'),
+      /unresolved sequence/i,
+    );
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -172,8 +176,16 @@ test('contextual editing expands a selected action to its observed setup and rea
     JSON.stringify({
       candidates: [
         {
-          actionId: 'a1', include: true, start: 10, end: 13, title: 'Too short',
-          description: '', reason: '', accelerate: [], overlaps: [], confidence: 0.8,
+          actionId: 'a1',
+          include: true,
+          start: 10,
+          end: 13,
+          title: 'Too short',
+          description: '',
+          reason: '',
+          accelerate: [],
+          overlaps: [],
+          confidence: 0.8,
         },
       ],
     }),

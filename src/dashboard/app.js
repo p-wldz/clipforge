@@ -8,21 +8,28 @@ providerHelp.className = 'muted little';
 providerHelp.setAttribute('role', 'status');
 $('#analysis-provider').closest('label').after(providerHelp);
 let providerHints = {
-  none: 'Local analysis only. No frames, video, audio, or transcripts leave this computer.',
+  none: 'No AI selected. Local analysis is private, but its candidates are less reliable and less context-aware.',
 };
 let providerChoices = [];
 async function loadProviderChoices() {
   const choices = await api('/api/ai/providers');
   providerChoices = choices;
-  const select = $('#analysis-provider'), selected = select.value;
-  select.innerHTML = '<option value="none">No AI</option>' + choices.map((choice) => `<option value="${choice.id}">${choice.label}</option>`).join('');
+  const select = $('#analysis-provider'),
+    selected = select.value;
+  select.innerHTML =
+    '<option value="none">No AI</option>' +
+    choices.map((choice) => `<option value="${choice.id}">${choice.label}</option>`).join('');
   select.value = selected;
-  providerHints = { ...providerHints, ...Object.fromEntries(choices.map((choice) => [choice.id, choice.hint])) };
+  providerHints = {
+    ...providerHints,
+    ...Object.fromEntries(choices.map((choice) => [choice.id, choice.hint])),
+  };
   updateProviderHelp();
 }
 function updateProviderHelp() {
   const provider = $('#analysis-provider').value;
-  providerHelp.textContent = providerHints[provider] || 'Choose a provider, then test it before analyzing media.';
+  providerHelp.textContent =
+    providerHints[provider] || 'Choose a provider, then test it before analyzing media.';
 }
 $('#analysis-provider').addEventListener('change', updateProviderHelp);
 updateProviderHelp();
@@ -99,12 +106,68 @@ let clips = [],
   selectedHighlightIds = new Set(),
   settings = null,
   inventory = null,
+  mediaInventory = null,
   analysisRuns = [],
   uiJob = null,
   playing = false,
   playIndex = 0,
   previewItems = [],
   browserPreviews = new Map();
+function ensureFolderClipStat() {
+  let stat = $('#stat-folder-clips');
+  if (stat) return stat;
+  const container = $('#stat-clips').closest('.stat');
+  container.insertAdjacentHTML(
+    'afterend',
+    '<div class="stat"><strong id="stat-folder-clips">0</strong><span id="folder-clips-label">In clips/</span></div>',
+  );
+  return $('#stat-folder-clips');
+}
+function ensureAnalysisInventory() {
+  let status = $('#analysis-inventory');
+  if (status) return status;
+  $('#start-analysis').insertAdjacentHTML(
+    'beforebegin',
+    '<p id="analysis-inventory" class="muted little" role="status">Checking the clips folder...</p>',
+  );
+  return $('#analysis-inventory');
+}
+function mountQualityBenchmark() {
+  if ($('#quality-benchmark')) return;
+  $('#run-usage').insertAdjacentHTML(
+    'afterend',
+    '<details id="quality-benchmark" class="inset-details"><summary>Quality benchmark</summary><p id="quality-benchmark-status" class="muted little">Checking local benchmark...</p><button id="quality-benchmark-init" class="button-secondary" hidden>Create benchmark template</button></details>',
+  );
+  $('#quality-benchmark-init').onclick = async () => {
+    try {
+      const result = await send('/api/evaluation/init', 'POST');
+      $('#quality-benchmark-status').textContent =
+        `Template created at ${result.fixturePath}. Add real clip IDs and timestamped expected moments, then refresh.`;
+      $('#quality-benchmark-init').hidden = true;
+    } catch (error) {
+      notify(error.message);
+    }
+  };
+}
+async function loadQualityBenchmark() {
+  const result = await api('/api/evaluation');
+  const status = $('#quality-benchmark-status');
+  const button = $('#quality-benchmark-init');
+  if (!result.configured) {
+    status.textContent = result.message;
+    button.hidden = false;
+    return;
+  }
+  const report = result.report;
+  const missed = report.unmatchedExpectedIds.slice(0, 5);
+  const extras = report.unmatchedHighlightIds.slice(0, 5);
+  status.textContent = `Precision ${report.precision ?? '—'} · Recall ${report.recall ?? '—'} · Boundary error ${report.meanBoundaryErrorSeconds ?? '—'}s · ${report.duplicateProposals} duplicate proposal(s) · ${report.expectedMoments} labeled moment(s).`;
+  if (missed.length)
+    status.textContent += ` Missed: ${missed.join(', ')}${report.unmatchedExpectedIds.length > missed.length ? '…' : ''}.`;
+  if (extras.length)
+    status.textContent += ` Extra proposals: ${extras.join(', ')}${report.unmatchedHighlightIds.length > extras.length ? '…' : ''}.`;
+  button.hidden = true;
+}
 const clipOf = (h) => clips.find((c) => c.id === h?.clip_id);
 const highlightOf = (id) => highlights.find((h) => h.id === id);
 const fileName = (p) => (p || '').split(/[\\/]/).pop();
@@ -199,6 +262,7 @@ function openTranscriptMoment(clipId, start) {
   } else notify('This transcript has no highlight yet; create one from a clip review.');
 }
 mountTranscriptSearch();
+mountQualityBenchmark();
 function mountHighlightDeletion() {
   $('#add-selected-to-studio').insertAdjacentHTML(
     'afterend',
@@ -232,13 +296,32 @@ function mountHighlightDeletion() {
 mountHighlightDeletion();
 async function reload() {
   try {
-    [clips, highlights, projects, analyses] = await Promise.all(
-      ['/api/clips', '/api/highlights', '/api/projects', '/api/analysis/clips'].map((u) => api(u)),
+    [clips, highlights, projects, analyses, mediaInventory] = await Promise.all(
+      [
+        '/api/clips',
+        '/api/highlights',
+        '/api/projects',
+        '/api/analysis/clips',
+        '/api/media/inventory',
+      ].map((u) => api(u)),
     );
     $('#stat-clips').textContent = clips.length;
+    $('#stat-clips').nextElementSibling.textContent = 'In database';
+    ensureFolderClipStat().textContent = mediaInventory.files.length;
+    $('#folder-clips-label').textContent = mediaInventory.exists
+      ? `In ${mediaInventory.mediaDir}/`
+      : `${mediaInventory.mediaDir}/ missing`;
+    const readyFiles = mediaInventory.files.length;
+    ensureAnalysisInventory().textContent = mediaInventory.exists
+      ? readyFiles
+        ? `${readyFiles} video file${readyFiles === 1 ? '' : 's'} found in ${mediaInventory.mediaDir}/ and ready to analyze.`
+        : `No supported video files found in ${mediaInventory.mediaDir}/. Add .mp4, .mkv, .mov, or .webm files, then refresh.`
+      : `The configured media folder ${mediaInventory.mediaDir}/ does not exist. Create it or update Project settings.`;
+    $('#start-analysis').disabled = !readyFiles;
     $('#stat-highlights').textContent = highlights.length;
     $('#stat-approved').textContent = highlights.filter((h) => h.status === 'approved').length;
     $('#stat-movies').textContent = projects.length;
+    await loadQualityBenchmark();
     renderLibrary();
     renderProjectList();
     await loadProposal();
@@ -313,17 +396,28 @@ async function showHighlight(id) {
         const video = $('#review-player');
         video.src = result.url;
         video.load();
-        notify(result.cached ? 'Using the existing local MP4 preview' : 'Local MP4 preview created');
+        notify(
+          result.cached ? 'Using the existing local MP4 preview' : 'Local MP4 preview created',
+        );
       });
     });
   }
   $('#clip-editorial').insertAdjacentHTML(
     'afterend',
-    '<details class="clip-meta"><summary>Conversation understanding</summary><div id="clip-conversations" class="cards-list">Loading…</div></details>',
+    '<details class="clip-meta"><summary>Conversation understanding</summary><div id="clip-conversations" class="cards-list">Loading…</div></details><details class="clip-meta"><summary>Detected sound events</summary><p class="muted little">Rough AudioSet estimates, not verified gameplay events.</p><div id="clip-sound-events" class="muted little">Loading…</div></details>',
   );
+  api(`/api/sound-events/${encodeURIComponent(h.clip_id)}`)
+    .then((events) => {
+      $('#clip-sound-events').textContent = events.length
+        ? events
+            .map((event) => `${seconds(event.start)}–${seconds(event.end)} · ${event.label} (${Math.round(event.confidence * 100)}%)`)
+            .join('\n')
+        : 'No classified sound events for this clip.';
+    })
+    .catch((error) => ($('#clip-sound-events').textContent = error.message));
   $('#review-to-film').insertAdjacentHTML(
     'beforebegin',
-    '<button id="review-delete" class="button-secondary danger-button">Delete</button>',
+    '<button id="review-reanalyze" class="button-secondary">Re-analyze this clip</button><button id="review-delete" class="button-secondary danger-button">Delete</button>',
   );
   const update = async (status) => {
     try {
@@ -346,6 +440,31 @@ async function showHighlight(id) {
     navigate('studio');
     await addHighlightIds([h.id]);
   };
+  $('#review-reanalyze').onclick = async () => {
+    const usingAi = $('#analysis-provider').value !== 'none';
+    if (
+      !confirm(
+        `Re-analyze this clip? Its generated highlights will be replaced and removed from film projects. Your feedback and missed moments stay local.${usingAi ? ' The selected AI will receive saved review observations for this clip.' : ''}`,
+      )
+    )
+      return;
+    try {
+      await clickTask($('#review-reanalyze'), 'Re-analyzing...', async () => {
+        const result = await send(`/api/clips/${encodeURIComponent(h.clip_id)}/reanalyze`, 'POST', {
+          reset: true,
+          provider: $('#analysis-provider').value,
+        });
+        uiJob = result.jobId;
+        selected = null;
+        $('#review').innerHTML = '<div class="empty">This clip is being re-analyzed.</div>';
+        $('#analysis-job-status').textContent = 'Single-clip analysis in progress...';
+        navigate('home');
+        pollRuns();
+      });
+    } catch (error) {
+      notify(error.message);
+    }
+  };
   $('#review-delete').onclick = async () => {
     if (!confirm(`Delete “${h.title}”? This cannot be undone.`)) return;
     try {
@@ -361,7 +480,7 @@ async function showHighlight(id) {
   };
   $('#review').insertAdjacentHTML(
     'beforeend',
-    `<details class="clip-meta"><summary>Your feedback</summary><div class="range-fields"><label>Rating<select id="feedback-rating"><option value="">No rating</option>${[1, 2, 3, 4, 5].map((n) => `<option value="${n}">${n} star${n === 1 ? '' : 's'}</option>`).join('')}</select></label><label>Category<select id="feedback-category"><option value="">Choose one</option>${['too_short', 'too_long', 'starts_too_late', 'ends_too_early', 'missed_important_action', 'missing_context', 'missing_reaction', 'wrong_interpretation', 'not_interesting', 'repetitive', 'bad_audio', 'funny_moment', 'great_action', 'excellent_storytelling'].map((x) => `<option value="${x}">${safe(x.replaceAll('_', ' '))}</option>`).join('')}</select></label></div><label>Notes<textarea id="feedback-notes" rows="2" placeholder="Optional feedback for future review"></textarea></label><label class="checkbox-row"><input id="feedback-favorite" type="checkbox"> Favorite</label><button id="feedback-save" class="button-secondary">Save feedback</button><div id="feedback-history" class="muted little"></div></details><details class="clip-meta"><summary>Mark a missed moment</summary><p class="muted little">Uses the current cut range; adjust start/end above first.</p><label>Description<textarea id="missed-description" rows="2" placeholder="What did Clipforge miss?"></textarea></label><button id="missed-save" class="button-secondary">Save missed moment</button></details>`,
+    `<details class="clip-meta"><summary>Your feedback</summary><div class="range-fields"><label>Rating<select id="feedback-rating"><option value="">No rating</option>${[1, 2, 3, 4, 5].map((n) => `<option value="${n}">${n} star${n === 1 ? '' : 's'}</option>`).join('')}</select></label><label>Category<select id="feedback-category"><option value="">Choose one</option>${['too_short', 'too_long', 'starts_too_late', 'ends_too_early', 'missed_important_action', 'missing_context', 'missing_reaction', 'wrong_interpretation', 'not_interesting', 'repetitive', 'bad_audio', 'funny_moment', 'great_action', 'excellent_storytelling'].map((x) => `<option value="${x}">${safe(x.replaceAll('_', ' '))}</option>`).join('')}</select></label></div><label>Notes<textarea id="feedback-notes" rows="2" placeholder="Optional feedback for future review"></textarea></label><label class="checkbox-row"><input id="feedback-favorite" type="checkbox"> Favorite</label><button id="feedback-save" class="button-secondary">Save feedback</button><div id="feedback-history" class="muted little"></div></details><details class="clip-meta"><summary>Quality benchmark</summary><p class="muted little">Add the current cut as a manually labeled expected moment. This does not approve it.</p><label>Label<textarea id="benchmark-label" rows="2" placeholder="Why is this a moment worth finding?"></textarea></label><button id="benchmark-save" class="button-secondary">Add to benchmark</button></details><details class="clip-meta"><summary>Mark a missed moment</summary><p class="muted little">Uses the current cut range; adjust start/end above first.</p><label>Description<textarea id="missed-description" rows="2" placeholder="What did Clipforge miss?"></textarea></label><button id="missed-save" class="button-secondary">Save missed moment</button></details>`,
   );
   const renderFeedback = async () => {
     const rows = await api(`/api/highlights/${encodeURIComponent(h.id)}/feedback`);
@@ -403,6 +522,21 @@ async function showHighlight(id) {
         notify('Missed moment saved for your next targeted reanalysis');
       });
     } catch {}
+  };
+  $('#benchmark-save').onclick = async () => {
+    try {
+      await clickTask($('#benchmark-save'), 'Adding...', async () => {
+        await send('/api/evaluation/moments', 'POST', {
+          clipId: h.clip_id,
+          start: Number($('#review-start').value),
+          end: Number($('#review-end').value),
+          label: $('#benchmark-label').value,
+        });
+        notify('Expected moment added to the local benchmark');
+      });
+    } catch (error) {
+      notify(error.message.includes('No evaluation fixture') ? 'Create the benchmark template on Home first.' : error.message);
+    }
   };
   renderFeedback().catch((e) => notify(e.message));
   const v = $('#review-player');
@@ -947,6 +1081,8 @@ async function pollRuns() {
     $('#run-status').textContent = latest
       ? `${latest.status.toUpperCase()} · ${latest.current_stage || 'pending'} · ${latest.processed_count}/${latest.source_count} files${latest.current_file ? ' · ' + fileName(latest.current_file) : ''}${latest.error ? ' · ' + latest.error : ''}`
       : 'No analysis yet';
+    if (latest)
+      $('#run-status').textContent += ` · Started from ${latest.owner === 'dashboard' ? 'dashboard' : 'CLI'}`;
     $('#run-select').innerHTML = analysisRuns
       .map(
         (r) => `<option value="${safe(r.id)}">${safe(r.started_at)} · ${safe(r.status)}</option>`,
@@ -987,8 +1123,8 @@ async function pollRuns() {
         ? `${Math.min(100, (100 * (latest?.processed_count || 0)) / total)}%`
         : '5%';
     }
-    $('#start-analysis').disabled = running;
-    $('#stop-analysis').disabled = !(uiJob || latest?.status === 'running');
+    $('#start-analysis').disabled = running || !mediaInventory?.files.length;
+    $('#stop-analysis').disabled = !(uiJob || (latest?.status === 'running' && latest.owner === 'dashboard'));
     if (lastRun && latest?.id === lastRun && latest.status !== 'running') {
       await reload();
       lastRun = '';
@@ -1007,10 +1143,18 @@ $('#run-select').onchange = () => {
   pollRuns();
 };
 $('#start-analysis').onclick = async () => {
+  const provider = $('#analysis-provider').value;
+  if (
+    provider === 'none' &&
+    !confirm(
+      'No AI is selected. Local analysis stays private, but produces less reliable and less context-aware candidates. Start without AI?',
+    )
+  )
+    return;
   busy($('#start-analysis'), true, 'Analyzing...');
   try {
     const r = await send('/api/analysis/start', 'POST', {
-      provider: $('#analysis-provider').value,
+      provider,
       force: $('#analysis-force').checked,
     });
     uiJob = r.jobId;
@@ -1031,6 +1175,11 @@ $('#stop-analysis').onclick = async () => {
       if (active.status === 'running') uiJob = active.jobId;
     }
     if (!uiJob && latest?.status === 'running') {
+      if (latest.owner !== 'dashboard') {
+        $('#analysis-job-status').textContent =
+          'A CLI analysis is running. Manage it from the terminal that started it.';
+        return;
+      }
       if (
         !confirm(
           'The dashboard that started this run is no longer available. Clear its stuck record? This cannot stop a separately run CLI analysis.',
@@ -1135,7 +1284,9 @@ async function loadInventory() {
   const stages = inventory.stages;
   const stageProviders = providerChoices.length
     ? providerChoices
-    : Object.keys(inventory.providers).filter((id) => id !== 'cursor').map((id) => ({ id, label: id }));
+    : Object.keys(inventory.providers)
+        .filter((id) => id !== 'cursor')
+        .map((id) => ({ id, label: id }));
   $('#stage-config').innerHTML = [
     ['clipAnalysis', 'Clip analysis'],
     ['montage', 'Movie suggestion'],
@@ -1199,29 +1350,63 @@ $('#agent-test-button').onclick = async () => {
   }
 };
 const promptMeta = {
-  'conversation-understanding': ['Conversation context', 'Groups timestamped transcript lines without rewriting what was said.'],
-  'deep-action-analysis': ['Complete action evidence', 'Maps setup, action, outcome, and reaction before any creative selection.'],
-  'contextual-editing': ['Highlight selection', 'Selects complete actions that fit the project brief; it can select none.'],
-  'critical-review': ['Boundary review', 'Checks proposed cuts against saved evidence; it cannot invent a new moment.'],
-  'understanding-base': ['Objective observation', 'Describes source evidence before domain or creative preferences are applied.'],
-  'understanding-contextual': ['Domain interpretation', 'Adds game/domain meaning while retaining the original observations.'],
-  'editing-boundary-refinement': ['Narrative safeguard', 'Keeps necessary setup and reaction when refining a cut.'],
-  'clip-analysis': ['Clip analysis', 'Creates an evidence-based overview and candidate moments for one source clip.'],
-  'highlight-selection': ['Cut-point guidance', 'Explains how selected moments should retain context and payoff.'],
-  montage: ['Film proposal', 'Orders existing highlights into an editable proposal; it never renders automatically.'],
+  'conversation-understanding': [
+    'Conversation context',
+    'Groups timestamped transcript lines without rewriting what was said.',
+  ],
+  'deep-action-analysis': [
+    'Complete action evidence',
+    'Maps setup, action, outcome, and reaction before any creative selection.',
+  ],
+  'contextual-editing': [
+    'Highlight selection',
+    'Selects complete actions that fit the project brief; it can select none.',
+  ],
+  'critical-review': [
+    'Boundary review',
+    'Checks proposed cuts against saved evidence; it cannot invent a new moment.',
+  ],
+  'understanding-base': [
+    'Objective observation',
+    'Describes source evidence before domain or creative preferences are applied.',
+  ],
+  'understanding-contextual': [
+    'Domain interpretation',
+    'Adds game/domain meaning while retaining the original observations.',
+  ],
+  'editing-boundary-refinement': [
+    'Narrative safeguard',
+    'Keeps necessary setup and reaction when refining a cut.',
+  ],
+  'clip-analysis': [
+    'Clip analysis',
+    'Creates an evidence-based overview and candidate moments for one source clip.',
+  ],
+  'highlight-selection': [
+    'Cut-point guidance',
+    'Explains how selected moments should retain context and payoff.',
+  ],
+  montage: [
+    'Film proposal',
+    'Orders existing highlights into an editable proposal; it never renders automatically.',
+  ],
   'film-direction': ['Film direction', 'Sets the desired arc and pacing for a whole montage.'],
-  'film-regeneration': ['Proposal revision', 'Improves a saved film proposal using the latest user guidance.'],
-  'agent-test': ['Connection test', 'Verifies a provider can return the expected small JSON response.'],
+  'film-regeneration': [
+    'Proposal revision',
+    'Improves a saved film proposal using the latest user guidance.',
+  ],
+  'agent-test': [
+    'Connection test',
+    'Verifies a provider can return the expected small JSON response.',
+  ],
 };
 async function loadPrompts() {
   const prompts = await api('/api/prompts');
   $('#prompts-panel').innerHTML = Object.entries(prompts)
-    .map(
-      ([name, value]) => {
-        const [title, description] = promptMeta[name] || [name, 'Advanced project instruction.'];
-        return `<div class="prompt-entry"><h3 title="${safe(name)}.md">${safe(title)}</h3><p class="muted little">${safe(description)}</p><textarea id="prompt-${safe(name)}" rows="11" aria-label="${safe(title)} prompt">${safe(value)}</textarea><button data-prompt-save="${safe(name)}" class="button-secondary">Save ${safe(title)}</button></div>`;
-      },
-    )
+    .map(([name, value]) => {
+      const [title, description] = promptMeta[name] || [name, 'Advanced project instruction.'];
+      return `<div class="prompt-entry"><h3 title="${safe(name)}.md">${safe(title)}</h3><p class="muted little">${safe(description)}</p><textarea id="prompt-${safe(name)}" rows="11" aria-label="${safe(title)} prompt">${safe(value)}</textarea><button data-prompt-save="${safe(name)}" class="button-secondary">Save ${safe(title)}</button></div>`;
+    })
     .join('');
   $$('[data-prompt-save]').forEach(
     (b) =>
@@ -1242,6 +1427,10 @@ function renderProcessing() {
   const c = settings.config;
   $('#processing-fields').innerHTML =
     `<label>Clips directory<input id="cfg-directory" value="${safe(c.mediaDir)}"></label><label>Screenshot interval (seconds)<input id="cfg-interval" type="number" min="0.1" step="0.1" value="${c.analysis.frameIntervalSeconds}"></label><label>Max clip duration (seconds)<input id="cfg-duration" type="number" min="1" value="${c.analysis.maxDurationSeconds ?? ''}" placeholder="Unlimited"></label><label>Max images sent to AI (1–30)<input id="cfg-image-limit" type="number" min="1" max="30" value="${c.analysis.maxImagesPerClip ?? 8}"></label><label>Screenshot max width (px)<input id="cfg-image-width" type="number" min="256" max="1920" step="1" value="${c.analysis.imageMaxWidth ?? 640}"></label><label>Max highlights per clip<input id="cfg-highlights" type="number" min="1" value="${c.analysis.maxHighlightsPerClip}"></label><label><input id="cfg-transcription" type="checkbox" ${c.transcription.enabled ? 'checked' : ''}> Enable transcription</label><label><input id="cfg-sounds" type="checkbox" ${c.soundClassifier.enabled ? 'checked' : ''}> Enable sound classifier</label>`;
+  $('#processing-fields').insertAdjacentHTML(
+    'beforeend',
+    `<label>Candidate lead-in (seconds)<input id="cfg-pre-roll" type="number" min="0" max="30" step="0.1" value="${c.analysis.candidatePreRollSeconds ?? 0}"></label><label>Candidate tail (seconds)<input id="cfg-post-roll" type="number" min="0" max="30" step="0.1" value="${c.analysis.candidatePostRollSeconds ?? 0}"></label><label>Sound confidence (0–1)<input id="cfg-sound-confidence" type="number" min="0" max="1" step="0.01" value="${c.soundClassifier.minConfidence}"></label><label>Sound window (seconds)<input id="cfg-sound-window" type="number" min="1" max="20" step="0.1" value="${c.soundClassifier.windowSeconds}"></label><label>Sound hop (seconds)<input id="cfg-sound-hop" type="number" min="0.1" step="0.1" value="${c.soundClassifier.hopSeconds}"></label><label>Max sound events<input id="cfg-sound-events" type="number" min="1" step="1" value="${c.soundClassifier.maxEvents}"></label>`,
+  );
 }
 $('#save-processing').onclick = async () => {
   try {
@@ -1254,8 +1443,14 @@ $('#save-processing').onclick = async () => {
     c.analysis.maxHighlightsPerClip = Number($('#cfg-highlights').value);
     c.analysis.maxImagesPerClip = Number($('#cfg-image-limit').value);
     c.analysis.imageMaxWidth = Number($('#cfg-image-width').value);
+    c.analysis.candidatePreRollSeconds = Number($('#cfg-pre-roll').value);
+    c.analysis.candidatePostRollSeconds = Number($('#cfg-post-roll').value);
     c.transcription.enabled = $('#cfg-transcription').checked;
     c.soundClassifier.enabled = $('#cfg-sounds').checked;
+    c.soundClassifier.minConfidence = Number($('#cfg-sound-confidence').value);
+    c.soundClassifier.windowSeconds = Number($('#cfg-sound-window').value);
+    c.soundClassifier.hopSeconds = Number($('#cfg-sound-hop').value);
+    c.soundClassifier.maxEvents = Number($('#cfg-sound-events').value);
     await send('/api/settings', 'PUT', settings);
     notify('Processing settings saved');
   } catch (e) {

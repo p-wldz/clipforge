@@ -511,10 +511,11 @@ export async function baseUnderstanding(
     throw new Error('Base understanding requires a configured AI provider');
   const prompt = await getPrompt(root, 'deep-action-analysis');
   const key = hash({
-    stage: 'deep-action-v1',
+    stage: 'deep-action-v2',
     prompt,
     provider: profile,
     media: input.media,
+    images: input.images,
   });
   const cached = db.stageArtifact(input.clipId, 'deep-action', key);
   if (cached?.status === 'success')
@@ -531,6 +532,24 @@ export async function baseUnderstanding(
     output = path.join(folder, 'deep-action-response.txt');
   const request = `${prompt}\n\nReturn ONLY JSON: {summary,actions:[{id,start,end,whatHappens,phases:{beginning?,buildUp?,change?,climax?,resolution?,reaction?},evidence:[{start,end,kind,detail}],uncertainty:[{claim,reason,clarifyWith}]}],relationships:string[]}. A phase is {start,end,description}.\n\nINPUT:\n${JSON.stringify(input.media).slice(0, 100000)}\n\nFRAME PATHS:\n${input.images.join('\n')}`;
   await writeFile(path.join(folder, 'deep-action-prompt.txt'), request);
+  await writeFile(
+    path.join(folder, 'vision-input.json'),
+    JSON.stringify(
+      {
+        provider: profile.provider,
+        attachmentCount: input.images.length,
+        transport:
+          profile.provider === 'codex'
+            ? 'codex --image'
+            : ['deepseek', 'openai', 'anthropic'].includes(profile.provider)
+              ? 'provider vision input'
+              : 'text paths only (no supported image transport)',
+        images: input.images,
+      },
+      null,
+      2,
+    ),
+  );
   onEvent?.(`Deep Action Analysis: invoking ${profile.provider}`);
   try {
     const response = await runAgentText(
@@ -543,6 +562,7 @@ export async function baseUnderstanding(
       saveUsage(db, input, 'deep-action', profile.provider, profile.model, input.images.length),
       input.signal,
       onEvent,
+      input.images,
     );
     const understanding = {
       ...parseDeepAction(response, input.duration, input.clipId),
@@ -615,8 +635,7 @@ export function parseContextualEditing(
     // A selected Deep Action is a complete story unit. Keep its observed setup
     // and outcome/reaction; optional acceleration can handle dull traversal.
     const completeStart = action.phases.beginning?.start ?? action.start;
-    const completeEnd =
-      action.phases.reaction?.end ?? action.phases.resolution?.end ?? action.end;
+    const completeEnd = action.phases.reaction?.end ?? action.phases.resolution?.end ?? action.end;
     const completeStartBound = v.include ? Math.min(start, completeStart) : start;
     const completeEndBound = v.include ? Math.max(end, completeEnd) : end;
     return [
@@ -671,6 +690,7 @@ export async function contextualEditing(
     duration: number;
     understanding: Understanding;
     context: string;
+    reviewObservations?: unknown[];
     config: Config;
     runId?: string;
     signal?: AbortSignal;
@@ -689,6 +709,7 @@ export async function contextualEditing(
     profile,
     context: input.context,
     understanding: input.understanding,
+    reviewObservations: input.reviewObservations ?? [],
   });
   const cached = db.stageArtifact(input.clipId, 'contextual-editing', key);
   if (cached?.status === 'success')
@@ -701,7 +722,7 @@ export async function contextualEditing(
   await mkdir(folder, { recursive: true });
   const file = path.join(folder, 'contextual-editing.json'),
     output = path.join(folder, 'contextual-editing-response.txt');
-  const request = `${prompt}\n\nBOUNDARY SAFEGUARD:\n${boundaryGuidance}\n\nReturn ONLY JSON: {candidates:[{actionId,include,start,end,title,description,reason,accelerate:[{start,end,speed}],overlaps:string[],confidence,conversationId?,narrativePhaseCoverage:string[],missingContextRisks:string[]}]}. Include one decision for every action; excluded actions still require actionId, include:false, reason and confidence. For an included action, start at or before its observed beginning and end at or after its observed resolution or reaction. If the action is not worthwhile with its necessary context, exclude it rather than submitting a contextless fragment.\n\nEDITING CONTEXT:\n${input.context}\n\nDEEP ACTION ANALYSIS:\n${JSON.stringify(input.understanding)}`;
+  const request = `${prompt}\n\nBOUNDARY SAFEGUARD:\n${boundaryGuidance}\n\nReturn ONLY JSON: {candidates:[{actionId,include,start,end,title,description,reason,accelerate:[{start,end,speed}],overlaps:string[],confidence,conversationId?,narrativePhaseCoverage:string[],missingContextRisks:string[]}]}. Include one decision for every action; excluded actions still require actionId, include:false, reason and confidence. For an included action, start at or before its observed beginning and end at or after its observed resolution or reaction. If the action is not worthwhile with its necessary context, exclude it rather than submitting a contextless fragment.\n\nEDITING CONTEXT:\n${input.context}\n\nUSER REVIEW OBSERVATIONS (creative calibration only; never media evidence):\n${JSON.stringify(input.reviewObservations ?? [])}\n\nDEEP ACTION ANALYSIS:\n${JSON.stringify(input.understanding)}`;
   await writeFile(path.join(folder, 'contextual-editing-prompt.txt'), request);
   try {
     const response = await runAgentText(

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
@@ -26,7 +26,10 @@ test('AI stage profiles preserve legacy agent and expose API model scan', async 
     res = await fetch(base + '/api/ai/providers');
     assert.equal(res.status, 200);
     const providers = await res.json();
-    assert.equal(providers.find((provider) => provider.id === 'anthropic').environment, 'ANTHROPIC_API_KEY');
+    assert.equal(
+      providers.find((provider) => provider.id === 'anthropic').environment,
+      'ANTHROPIC_API_KEY',
+    );
     assert.equal(providers.find((provider) => provider.id === 'codex').auth, 'installed-client');
     res = await fetch(base + '/api/ai/stages', {
       method: 'PUT',
@@ -101,6 +104,134 @@ test('dashboard analysis start checks inputs and reports failures asynchronously
     assert.equal(status.status, 'completed');
   } finally {
     await new Promise((r) => server.close(r));
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('dashboard reports media files ready for a first analysis', async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'clipforge-media-inventory-'));
+  await initWorkspace(dir);
+  await writeFile(path.join(dir, 'clips', 'match.MP4'), 'fixture');
+  await writeFile(path.join(dir, 'clips', 'notes.txt'), 'not a video');
+  const server = startServer(dir, 0);
+  await new Promise((resolve) =>
+    server.listening ? resolve() : server.once('listening', resolve),
+  );
+  try {
+    const base = `http://127.0.0.1:${server.address().port}`;
+    const response = await fetch(base + '/api/media/inventory');
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), {
+      mediaDir: 'clips',
+      exists: true,
+      files: ['match.MP4'],
+    });
+  } finally {
+    await new Promise((r) => server.close(r));
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('dashboard exposes a local quality benchmark without overwriting its fixture', async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'clipforge-evaluation-api-'));
+  await initWorkspace(dir);
+  const server = startServer(dir, 0);
+  await new Promise((resolve) =>
+    server.listening ? resolve() : server.once('listening', resolve),
+  );
+  try {
+    const base = `http://127.0.0.1:${server.address().port}`;
+    let response = await fetch(base + '/api/evaluation');
+    assert.equal(response.status, 200);
+    assert.equal((await response.json()).configured, false);
+    response = await fetch(base + '/api/evaluation/init', { method: 'POST' });
+    assert.equal(response.status, 201);
+    response = await fetch(base + '/api/evaluation/init', { method: 'POST' });
+    assert.equal(response.status, 409);
+    response = await fetch(base + '/api/evaluation');
+    const result = await response.json();
+    assert.equal(result.configured, true);
+    assert.equal(result.report.expectedMoments, 1);
+    const db = new Store(dir);
+    db.upsertClip({ id: 'clip', source_path: 'fixture.mp4', duration: 20, width: 1, height: 1, analyzed_at: new Date().toISOString(), transcript: null });
+    db.close();
+    response = await fetch(base + '/api/evaluation/moments', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ clipId: 'clip', start: 2, end: 8, label: 'A real expected moment' }) });
+    assert.equal(response.status, 201);
+    response = await fetch(base + '/api/evaluation/moments', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ clipId: 'clip', start: 2, end: 8 }) });
+    assert.equal(response.status, 409);
+    response = await fetch(base + '/api/evaluation');
+    assert.equal((await response.json()).report.expectedMoments, 1);
+  } finally {
+    await new Promise((r) => server.close(r));
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('dashboard keeps media discovery separate from the AI model inventory and confirms local analysis', async () => {
+  const app = await readFile(new URL('../src/dashboard/app.js', import.meta.url), 'utf8');
+  assert.match(app, /mediaInventory = null/);
+  assert.match(app, /unmatchedExpectedIds/);
+  assert.match(app, /cfg-sound-confidence/);
+  assert.match(app, /clip-sound-events/);
+  assert.match(app, /!mediaInventory\?\.files\.length/);
+  assert.match(app, /No AI is selected[\s\S]*Start without AI\?/);
+});
+
+test('dashboard can reset and reanalyze one clip while retaining its review observation', async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'clipforge-single-rerun-'));
+  await initWorkspace(dir);
+  const db = new Store(dir);
+  try {
+    db.upsertClip({
+      id: 'clip',
+      source_path: path.join(dir, 'missing.mp4'),
+      duration: 10,
+      width: 1,
+      height: 1,
+      analyzed_at: new Date().toISOString(),
+      transcript: null,
+    });
+    db.upsertHighlight({
+      id: 'highlight',
+      clip_id: 'clip',
+      start: 1,
+      end: 3,
+      title: 'Old',
+      description: '',
+      score: 50,
+      status: 'pending_review',
+      origin: 'heuristic',
+      created_at: new Date().toISOString(),
+    });
+    db.saveFeedback({
+      highlightId: 'highlight',
+      category: 'starts_too_late',
+      notes: 'More lead-in',
+    });
+  } finally {
+    db.close();
+  }
+  const server = startServer(dir, 0);
+  await new Promise((resolve) =>
+    server.listening ? resolve() : server.once('listening', resolve),
+  );
+  try {
+    const base = `http://127.0.0.1:${server.address().port}`;
+    const result = await fetch(base + '/api/clips/clip/reanalyze', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reset: true, provider: 'none' }),
+    });
+    assert.equal(result.status, 202);
+    const after = new Store(dir);
+    try {
+      assert.equal(after.highlight('highlight'), undefined);
+      assert.equal(after.reviewObservations('clip')[0].notes, 'More lead-in');
+    } finally {
+      after.close();
+    }
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
     await rm(dir, { recursive: true, force: true });
   }
 });
@@ -186,7 +317,7 @@ test('dashboard can clear an abandoned analysis record without an in-memory job'
   const dir = await mkdtemp(path.join(os.tmpdir(), 'clipforge-dashboard-stale-'));
   await initWorkspace(dir);
   const db = new Store(dir);
-  db.startRun('abandoned-run', 'none', 1);
+  db.startRun('abandoned-run', 'none', 1, 'dashboard');
   db.close();
   const server = startServer(dir, 0);
   await new Promise((resolve) =>
@@ -194,6 +325,12 @@ test('dashboard can clear an abandoned analysis record without an in-memory job'
   );
   try {
     const base = `http://127.0.0.1:${server.address().port}`;
+    const beforeClear = new Store(dir);
+    try {
+      assert.equal(beforeClear.runs()[0].status, 'running');
+    } finally {
+      beforeClear.close();
+    }
     const response = await fetch(base + '/api/analysis/runs/abandoned-run/cancel', {
       method: 'POST',
     });
@@ -202,6 +339,32 @@ test('dashboard can clear an abandoned analysis record without an in-memory job'
     const check = new Store(dir);
     try {
       assert.equal(check.runs()[0].status, 'cancelled');
+    } finally {
+      check.close();
+    }
+  } finally {
+    await new Promise((r) => server.close(r));
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('dashboard cannot clear a CLI analysis record', async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'clipforge-dashboard-cli-run-'));
+  await initWorkspace(dir);
+  const db = new Store(dir);
+  db.startRun('cli-run', 'none', 1);
+  db.close();
+  const server = startServer(dir, 0);
+  await new Promise((resolve) =>
+    server.listening ? resolve() : server.once('listening', resolve),
+  );
+  try {
+    const base = `http://127.0.0.1:${server.address().port}`;
+    const response = await fetch(base + '/api/analysis/runs/cli-run/cancel', { method: 'POST' });
+    assert.equal(response.status, 409);
+    const check = new Store(dir);
+    try {
+      assert.equal(check.runs()[0].status, 'running');
     } finally {
       check.close();
     }

@@ -5,6 +5,7 @@ export type Status = 'pending_review' | 'approved' | 'rejected';
 export type Clip = {
   id: string;
   source_path: string;
+  source_revision?: string | null;
   duration: number;
   width: number;
   height: number;
@@ -45,7 +46,7 @@ export class Store {
   constructor(root: string) {
     this.db = new DatabaseSync(dbPath(root));
     this.db.exec(`PRAGMA journal_mode=WAL;
-      CREATE TABLE IF NOT EXISTS clips(id TEXT PRIMARY KEY,source_path TEXT NOT NULL,duration REAL NOT NULL,width INTEGER NOT NULL,height INTEGER NOT NULL,analyzed_at TEXT NOT NULL,transcript TEXT);
+      CREATE TABLE IF NOT EXISTS clips(id TEXT PRIMARY KEY,source_path TEXT NOT NULL,source_revision TEXT,duration REAL NOT NULL,width INTEGER NOT NULL,height INTEGER NOT NULL,analyzed_at TEXT NOT NULL,transcript TEXT);
       CREATE TABLE IF NOT EXISTS highlights(id TEXT PRIMARY KEY,clip_id TEXT NOT NULL REFERENCES clips(id),start REAL NOT NULL,end REAL NOT NULL,title TEXT NOT NULL,description TEXT NOT NULL,score INTEGER NOT NULL,status TEXT NOT NULL CHECK(status IN ('pending_review','approved','rejected')),origin TEXT NOT NULL,created_at TEXT NOT NULL);
       CREATE INDEX IF NOT EXISTS idx_highlights_clip ON highlights(clip_id);
       CREATE TABLE IF NOT EXISTS clip_scans(id TEXT PRIMARY KEY,source_path TEXT NOT NULL,duration REAL,has_audio INTEGER,decision TEXT NOT NULL,reason TEXT,scanned_at TEXT NOT NULL);
@@ -54,8 +55,10 @@ export class Store {
       CREATE VIRTUAL TABLE IF NOT EXISTS transcript_search USING fts5(segment_id UNINDEXED,clip_id UNINDEXED,text);
       CREATE TABLE IF NOT EXISTS highlight_feedback(id INTEGER PRIMARY KEY AUTOINCREMENT,highlight_id TEXT NOT NULL REFERENCES highlights(id),rating INTEGER CHECK(rating BETWEEN 1 AND 5),category TEXT,notes TEXT NOT NULL DEFAULT '',favorite INTEGER NOT NULL DEFAULT 0,created_at TEXT NOT NULL);
       CREATE INDEX IF NOT EXISTS idx_feedback_highlight ON highlight_feedback(highlight_id,created_at DESC);
+      CREATE TABLE IF NOT EXISTS review_observations(id INTEGER PRIMARY KEY AUTOINCREMENT,clip_id TEXT NOT NULL REFERENCES clips(id),start REAL NOT NULL,end REAL NOT NULL,rating INTEGER CHECK(rating BETWEEN 1 AND 5),category TEXT,notes TEXT NOT NULL DEFAULT '',favorite INTEGER NOT NULL DEFAULT 0,source_highlight_id TEXT,created_at TEXT NOT NULL);
+      CREATE INDEX IF NOT EXISTS idx_review_observations_clip ON review_observations(clip_id,created_at DESC);
       CREATE TABLE IF NOT EXISTS missed_moments(id TEXT PRIMARY KEY,clip_id TEXT NOT NULL REFERENCES clips(id),start REAL NOT NULL,end REAL NOT NULL,description TEXT NOT NULL DEFAULT '',category TEXT,rating INTEGER CHECK(rating BETWEEN 1 AND 5),created_at TEXT NOT NULL);
-      CREATE TABLE IF NOT EXISTS analysis_runs(id TEXT PRIMARY KEY,started_at TEXT NOT NULL,finished_at TEXT,status TEXT NOT NULL,provider TEXT,source_count INTEGER NOT NULL,processed_count INTEGER NOT NULL DEFAULT 0,current_file TEXT,current_stage TEXT,error TEXT);
+      CREATE TABLE IF NOT EXISTS analysis_runs(id TEXT PRIMARY KEY,started_at TEXT NOT NULL,finished_at TEXT,status TEXT NOT NULL,provider TEXT,owner TEXT NOT NULL DEFAULT 'cli',source_count INTEGER NOT NULL,processed_count INTEGER NOT NULL DEFAULT 0,current_file TEXT,current_stage TEXT,error TEXT);
       CREATE TABLE IF NOT EXISTS analysis_events(id INTEGER PRIMARY KEY AUTOINCREMENT,run_id TEXT NOT NULL,at TEXT NOT NULL,level TEXT NOT NULL,stage TEXT NOT NULL,clip_id TEXT,message TEXT NOT NULL);
       CREATE INDEX IF NOT EXISTS idx_analysis_events_run ON analysis_events(run_id,id);
       CREATE TABLE IF NOT EXISTS clip_analyses(clip_id TEXT PRIMARY KEY,run_id TEXT NOT NULL,provider TEXT NOT NULL,status TEXT NOT NULL,title TEXT,summary TEXT,story_json TEXT,tags_json TEXT,trace_path TEXT,error TEXT,updated_at TEXT NOT NULL);
@@ -70,6 +73,11 @@ export class Store {
     const usageColumns = this.db.prepare('PRAGMA table_info(ai_usage)').all() as Array<{
       name: string;
     }>;
+    const clipColumns = this.db.prepare('PRAGMA table_info(clips)').all() as Array<{
+      name: string;
+    }>;
+    if (!clipColumns.some((column) => column.name === 'source_revision'))
+      this.db.exec('ALTER TABLE clips ADD COLUMN source_revision TEXT');
     if (!usageColumns.some((c) => c.name === 'cache_write_tokens'))
       this.db.exec('ALTER TABLE ai_usage ADD COLUMN cache_write_tokens INTEGER');
     if (!usageColumns.some((c) => c.name === 'image_count'))
@@ -79,6 +87,8 @@ export class Store {
     const runColumns = this.db.prepare('PRAGMA table_info(analysis_runs)').all() as Array<{
       name: string;
     }>;
+    if (!runColumns.some((c) => c.name === 'owner'))
+      this.db.exec("ALTER TABLE analysis_runs ADD COLUMN owner TEXT NOT NULL DEFAULT 'cli'");
     if (!runColumns.some((c) => c.name === 'warning_count'))
       this.db.exec('ALTER TABLE analysis_runs ADD COLUMN warning_count INTEGER NOT NULL DEFAULT 0');
     if (!runColumns.some((c) => c.name === 'failed_files'))
@@ -334,12 +344,12 @@ export class Store {
       complete: rows.every((x) => x.api_equivalent_usd !== null),
     };
   }
-  startRun(id: string, provider: string, total: number) {
+  startRun(id: string, provider: string, total: number, owner: 'cli' | 'dashboard' = 'cli') {
     this.db
       .prepare(
-        'INSERT INTO analysis_runs(id,started_at,status,provider,source_count,current_stage) VALUES(?,?,?,?,?,?)',
+        'INSERT INTO analysis_runs(id,started_at,status,provider,owner,source_count,current_stage) VALUES(?,?,?,?,?,?,?)',
       )
-      .run(id, new Date().toISOString(), 'running', provider, total, 'starting');
+      .run(id, new Date().toISOString(), 'running', provider, owner, total, 'starting');
   }
   progressRun(id: string, stage: string, file: string | null, processed?: number) {
     if (processed === undefined)
@@ -506,11 +516,12 @@ export class Store {
   upsertClip(clip: Clip) {
     this.db
       .prepare(
-        `INSERT INTO clips VALUES(?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET source_path=excluded.source_path,duration=excluded.duration,width=excluded.width,height=excluded.height,analyzed_at=excluded.analyzed_at,transcript=excluded.transcript`,
+        `INSERT INTO clips(id,source_path,source_revision,duration,width,height,analyzed_at,transcript) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET source_path=excluded.source_path,source_revision=excluded.source_revision,duration=excluded.duration,width=excluded.width,height=excluded.height,analyzed_at=excluded.analyzed_at,transcript=excluded.transcript`,
       )
       .run(
         clip.id,
         clip.source_path,
+        clip.source_revision ?? null,
         clip.duration,
         clip.width,
         clip.height,
@@ -738,6 +749,37 @@ export class Store {
           .all(clipId)
       : this.db.prepare('SELECT * FROM missed_moments ORDER BY created_at DESC').all();
   }
+  /** Bounded user-owned calibration for editing; never use it as objective media evidence. */
+  reviewContext(clipId: string) {
+    const feedback = this.reviewObservations(clipId).map((row: any) => ({
+      kind: 'reviewed_highlight',
+      start: row.start,
+      end: row.end,
+      rating: row.rating,
+      category: row.category,
+      notes: String(row.notes ?? '').slice(0, 1000),
+      favorite: Boolean(row.favorite),
+      createdAt: row.created_at,
+    }));
+    const missed = this.missedMoments(clipId).map((row: any) => ({
+      kind: 'missed_moment',
+      start: row.start,
+      end: row.end,
+      rating: row.rating,
+      category: row.category,
+      description: String(row.description ?? '').slice(0, 1000),
+      createdAt: row.created_at,
+    }));
+    return [...feedback, ...missed]
+      .sort(
+        (a, b) =>
+          String(b.createdAt).localeCompare(String(a.createdAt)) ||
+          a.kind.localeCompare(b.kind) ||
+          a.start - b.start ||
+          a.end - b.end,
+      )
+      .slice(0, 50);
+  }
   setTranscript(clipId: string, transcript: string) {
     this.db.prepare('UPDATE clips SET transcript=? WHERE id=?').run(transcript, clipId);
   }
@@ -768,6 +810,49 @@ export class Store {
       this.db.exec('ROLLBACK');
       throw error;
     }
+  }
+  /** Reset generated candidates but retain the user's review as local clip-level evidence. */
+  resetClipHighlights(clipId: string) {
+    if (!this.clip(clipId)) throw new Error('Clip not found');
+    this.db.exec('BEGIN');
+    try {
+      this.db
+        .prepare(
+          `INSERT INTO review_observations(clip_id,start,end,rating,category,notes,favorite,source_highlight_id,created_at)
+           SELECT h.clip_id,h.start,h.end,f.rating,f.category,f.notes,f.favorite,h.id,f.created_at
+           FROM highlight_feedback f JOIN highlights h ON h.id=f.highlight_id WHERE h.clip_id=?`,
+        )
+        .run(clipId);
+      this.db
+        .prepare(
+          'DELETE FROM highlight_set_items WHERE highlight_id IN (SELECT id FROM highlights WHERE clip_id=?)',
+        )
+        .run(clipId);
+      this.db
+        .prepare(
+          'DELETE FROM project_items WHERE highlight_id IN (SELECT id FROM highlights WHERE clip_id=?)',
+        )
+        .run(clipId);
+      this.db
+        .prepare(
+          'DELETE FROM highlight_feedback WHERE highlight_id IN (SELECT id FROM highlights WHERE clip_id=?)',
+        )
+        .run(clipId);
+      const result = this.db.prepare('DELETE FROM highlights WHERE clip_id=?').run(clipId);
+      this.db.exec(
+        'DELETE FROM highlight_sets WHERE NOT EXISTS (SELECT 1 FROM highlight_set_items WHERE highlight_set_items.context_key=highlight_sets.context_key AND highlight_set_items.cache_key=highlight_sets.cache_key)',
+      );
+      this.db.exec('COMMIT');
+      return Number(result.changes);
+    } catch (error) {
+      this.db.exec('ROLLBACK');
+      throw error;
+    }
+  }
+  reviewObservations(clipId: string) {
+    return this.db
+      .prepare('SELECT * FROM review_observations WHERE clip_id=? ORDER BY created_at DESC,id DESC')
+      .all(clipId);
   }
   /** Remove derived review items only; clips, artifacts, and projects remain intact. */
   deleteHighlights(ids?: string[]) {

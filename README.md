@@ -57,10 +57,12 @@ npm login --scope=@p-wldz --registry=https://npm.pkg.github.com
 npm install --global @p-wldz/clipforge
 ```
 
-Confirm the local dependencies before processing footage. `doctor` only reports what is available: it never installs software or contacts an AI provider.
+Confirm the local dependencies before processing footage. `doctor` only reports what is available: it never installs software or contacts an AI provider, and shows setup commands for optional Python tools.
 
 ```sh
 clipforge doctor
+# Preview the complete optional local setup: transcription + sound classification.
+clipforge setup all --dry-run
 ```
 
 ## Quick start: run with AI (recommended)
@@ -75,6 +77,8 @@ clipforge init ./my-highlights --name "Friday squad"
 
 # Copy .mp4, .mkv, .mov, or .webm recordings into ./my-highlights/clips/
 clipforge --root ./my-highlights doctor
+# Optional: preview local transcription and sound-event tooling before installing it.
+clipforge --root ./my-highlights setup all --dry-run
 ```
 
 Start the dashboard immediately after creating the workspace:
@@ -187,13 +191,13 @@ It uses video metadata, sampled frames, audio activity, and scene changes to pro
 Transcription and AudioSet-based sound classification are disabled by default. Preview their setup first:
 
 ```sh
-clipforge --root ./my-highlights setup --transcription --sound-classifier --dry-run
+clipforge --root ./my-highlights setup all --dry-run
 ```
 
 Run the plan only after reviewing it:
 
 ```sh
-clipforge --root ./my-highlights setup --transcription --sound-classifier --yes
+clipforge --root ./my-highlights setup all --yes
 ```
 
 Setup uses an isolated Python environment, not global `pip`. It can download local models. Sound labels are rough estimates, not proof of an in-game event.
@@ -205,6 +209,7 @@ Setup uses an isolated Python environment, not global `pip`. It can download loc
 | `clipforge init [folder]` | Create a project workspace. |
 | `clipforge doctor` | Check dependencies without installing or invoking AI. |
 | `clipforge analyze [file\|folder]` | Run local analysis and create review candidates. |
+| `clipforge reanalyze <clip-id> [--reset]` | Re-run one indexed clip, optionally replacing its generated candidates while retaining review observations. |
 | `clipforge dashboard` | Open the local review dashboard on `127.0.0.1`. |
 | `clipforge highlights` | List candidate highlights. |
 | `clipforge approve <id>` | Approve a reviewed highlight. |
