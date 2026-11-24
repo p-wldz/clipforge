@@ -132,6 +132,32 @@ test('dashboard reports media files ready for a first analysis', async () => {
   }
 });
 
+test('dashboard exposes a local quality benchmark without overwriting its fixture', async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'clipforge-evaluation-api-'));
+  await initWorkspace(dir);
+  const server = startServer(dir, 0);
+  await new Promise((resolve) =>
+    server.listening ? resolve() : server.once('listening', resolve),
+  );
+  try {
+    const base = `http://127.0.0.1:${server.address().port}`;
+    let response = await fetch(base + '/api/evaluation');
+    assert.equal(response.status, 200);
+    assert.equal((await response.json()).configured, false);
+    response = await fetch(base + '/api/evaluation/init', { method: 'POST' });
+    assert.equal(response.status, 201);
+    response = await fetch(base + '/api/evaluation/init', { method: 'POST' });
+    assert.equal(response.status, 409);
+    response = await fetch(base + '/api/evaluation');
+    const result = await response.json();
+    assert.equal(result.configured, true);
+    assert.equal(result.report.expectedMoments, 1);
+  } finally {
+    await new Promise((r) => server.close(r));
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test('dashboard keeps media discovery separate from the AI model inventory and confirms local analysis', async () => {
   const app = await readFile(new URL('../src/dashboard/app.js', import.meta.url), 'utf8');
   assert.match(app, /mediaInventory = null/);

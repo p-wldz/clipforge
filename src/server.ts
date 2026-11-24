@@ -27,6 +27,12 @@ import { AppError, errorLogEntry, errorStatus, publicError } from './core/errors
 import { analysisProviders, isAnalysisProvider, providerInfo } from './core/providers.js';
 import { browserPreviewMetadataPath, browserPreviewPath } from './core/browser-playback.js';
 import { run } from './core/process.js';
+import {
+  evaluateHighlights,
+  evaluationFixturePath,
+  evaluationTemplate,
+  loadEvaluationFixture,
+} from './pipeline/evaluation.js';
 const dashboardRoot = fileURLToPath(new URL('./dashboard/', import.meta.url));
 const contentTypes: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
@@ -117,6 +123,37 @@ export function startServer(root: string, port: number, host = '127.0.0.1'): Das
     try {
       const url = new URL(req.url ?? '/', `http://${host}:${port}`);
       const parts = url.pathname.split('/').filter(Boolean);
+      if (url.pathname === '/api/evaluation' && req.method === 'GET') {
+        const file = evaluationFixturePath(root);
+        try {
+          const fixture = await loadEvaluationFixture(root);
+          return send(res, 200, {
+            configured: true,
+            fixturePath: file,
+            report: evaluateHighlights(fixture, db.highlights()),
+          });
+        } catch (error) {
+          if ((error as Error).message !== 'No evaluation fixture. Run: clipforge evaluate --init')
+            throw error;
+          return send(res, 200, {
+            configured: false,
+            fixturePath: file,
+            message:
+              'Create a local benchmark template, add labeled moments, then refresh metrics.',
+          });
+        }
+      }
+      if (url.pathname === '/api/evaluation/init' && req.method === 'POST') {
+        const file = evaluationFixturePath(root);
+        try {
+          await readFile(file, 'utf8');
+          return send(res, 409, { error: 'Evaluation fixture already exists' });
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+        }
+        await writeFile(file, JSON.stringify(evaluationTemplate, null, 2) + '\n', 'utf8');
+        return send(res, 201, { fixturePath: file });
+      }
       if (url.pathname === '/api/media/inventory' && req.method === 'GET') {
         const config = await loadConfig(root);
         const mediaPath = path.resolve(root, config.mediaDir);

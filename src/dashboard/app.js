@@ -132,6 +132,36 @@ function ensureAnalysisInventory() {
   );
   return $('#analysis-inventory');
 }
+function mountQualityBenchmark() {
+  if ($('#quality-benchmark')) return;
+  $('#run-usage').insertAdjacentHTML(
+    'afterend',
+    '<details id="quality-benchmark" class="inset-details"><summary>Quality benchmark</summary><p id="quality-benchmark-status" class="muted little">Checking local benchmark...</p><button id="quality-benchmark-init" class="button-secondary" hidden>Create benchmark template</button></details>',
+  );
+  $('#quality-benchmark-init').onclick = async () => {
+    try {
+      const result = await send('/api/evaluation/init', 'POST');
+      $('#quality-benchmark-status').textContent =
+        `Template created at ${result.fixturePath}. Add real clip IDs and timestamped expected moments, then refresh.`;
+      $('#quality-benchmark-init').hidden = true;
+    } catch (error) {
+      notify(error.message);
+    }
+  };
+}
+async function loadQualityBenchmark() {
+  const result = await api('/api/evaluation');
+  const status = $('#quality-benchmark-status');
+  const button = $('#quality-benchmark-init');
+  if (!result.configured) {
+    status.textContent = result.message;
+    button.hidden = false;
+    return;
+  }
+  const report = result.report;
+  status.textContent = `Precision ${report.precision ?? '—'} · Recall ${report.recall ?? '—'} · Boundary error ${report.meanBoundaryErrorSeconds ?? '—'}s · ${report.duplicateProposals} duplicate proposal(s) · ${report.expectedMoments} labeled moment(s).`;
+  button.hidden = true;
+}
 const clipOf = (h) => clips.find((c) => c.id === h?.clip_id);
 const highlightOf = (id) => highlights.find((h) => h.id === id);
 const fileName = (p) => (p || '').split(/[\\/]/).pop();
@@ -226,6 +256,7 @@ function openTranscriptMoment(clipId, start) {
   } else notify('This transcript has no highlight yet; create one from a clip review.');
 }
 mountTranscriptSearch();
+mountQualityBenchmark();
 function mountHighlightDeletion() {
   $('#add-selected-to-studio').insertAdjacentHTML(
     'afterend',
@@ -284,6 +315,7 @@ async function reload() {
     $('#stat-highlights').textContent = highlights.length;
     $('#stat-approved').textContent = highlights.filter((h) => h.status === 'approved').length;
     $('#stat-movies').textContent = projects.length;
+    await loadQualityBenchmark();
     renderLibrary();
     renderProjectList();
     await loadProposal();
