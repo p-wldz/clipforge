@@ -171,6 +171,7 @@ test('dashboard keeps media discovery separate from the AI model inventory and c
   const app = await readFile(new URL('../src/dashboard/app.js', import.meta.url), 'utf8');
   assert.match(app, /mediaInventory = null/);
   assert.match(app, /unmatchedExpectedIds/);
+  assert.match(app, /cfg-sound-confidence/);
   assert.match(app, /!mediaInventory\?\.files\.length/);
   assert.match(app, /No AI is selected[\s\S]*Start without AI\?/);
 });

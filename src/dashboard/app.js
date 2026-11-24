@@ -1420,7 +1420,7 @@ function renderProcessing() {
     `<label>Clips directory<input id="cfg-directory" value="${safe(c.mediaDir)}"></label><label>Screenshot interval (seconds)<input id="cfg-interval" type="number" min="0.1" step="0.1" value="${c.analysis.frameIntervalSeconds}"></label><label>Max clip duration (seconds)<input id="cfg-duration" type="number" min="1" value="${c.analysis.maxDurationSeconds ?? ''}" placeholder="Unlimited"></label><label>Max images sent to AI (1–30)<input id="cfg-image-limit" type="number" min="1" max="30" value="${c.analysis.maxImagesPerClip ?? 8}"></label><label>Screenshot max width (px)<input id="cfg-image-width" type="number" min="256" max="1920" step="1" value="${c.analysis.imageMaxWidth ?? 640}"></label><label>Max highlights per clip<input id="cfg-highlights" type="number" min="1" value="${c.analysis.maxHighlightsPerClip}"></label><label><input id="cfg-transcription" type="checkbox" ${c.transcription.enabled ? 'checked' : ''}> Enable transcription</label><label><input id="cfg-sounds" type="checkbox" ${c.soundClassifier.enabled ? 'checked' : ''}> Enable sound classifier</label>`;
   $('#processing-fields').insertAdjacentHTML(
     'beforeend',
-    `<label>Candidate lead-in (seconds)<input id="cfg-pre-roll" type="number" min="0" max="30" step="0.1" value="${c.analysis.candidatePreRollSeconds ?? 0}"></label><label>Candidate tail (seconds)<input id="cfg-post-roll" type="number" min="0" max="30" step="0.1" value="${c.analysis.candidatePostRollSeconds ?? 0}"></label>`,
+    `<label>Candidate lead-in (seconds)<input id="cfg-pre-roll" type="number" min="0" max="30" step="0.1" value="${c.analysis.candidatePreRollSeconds ?? 0}"></label><label>Candidate tail (seconds)<input id="cfg-post-roll" type="number" min="0" max="30" step="0.1" value="${c.analysis.candidatePostRollSeconds ?? 0}"></label><label>Sound confidence (0–1)<input id="cfg-sound-confidence" type="number" min="0" max="1" step="0.01" value="${c.soundClassifier.minConfidence}"></label><label>Sound window (seconds)<input id="cfg-sound-window" type="number" min="1" max="20" step="0.1" value="${c.soundClassifier.windowSeconds}"></label><label>Sound hop (seconds)<input id="cfg-sound-hop" type="number" min="0.1" step="0.1" value="${c.soundClassifier.hopSeconds}"></label><label>Max sound events<input id="cfg-sound-events" type="number" min="1" step="1" value="${c.soundClassifier.maxEvents}"></label>`,
   );
 }
 $('#save-processing').onclick = async () => {
@@ -1438,6 +1438,10 @@ $('#save-processing').onclick = async () => {
     c.analysis.candidatePostRollSeconds = Number($('#cfg-post-roll').value);
     c.transcription.enabled = $('#cfg-transcription').checked;
     c.soundClassifier.enabled = $('#cfg-sounds').checked;
+    c.soundClassifier.minConfidence = Number($('#cfg-sound-confidence').value);
+    c.soundClassifier.windowSeconds = Number($('#cfg-sound-window').value);
+    c.soundClassifier.hopSeconds = Number($('#cfg-sound-hop').value);
+    c.soundClassifier.maxEvents = Number($('#cfg-sound-events').value);
     await send('/api/settings', 'PUT', settings);
     notify('Processing settings saved');
   } catch (e) {
