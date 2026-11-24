@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { ensurePrompts } from '../agents/prompts.js';
 import { defaultPrices, validateCatalog, type PriceCatalog } from './usage.js';
@@ -120,6 +120,14 @@ export const projectDir = (root: string) => path.join(workspaceDir(root), 'proje
 export const rendersDir = (root: string) => path.join(workspaceDir(root), 'renders');
 export const stableId = (file: string) =>
   createHash('sha256').update(path.resolve(file)).digest('hex').slice(0, 16);
+/** Lightweight local source revision: detects the normal overwrite/replace case without hashing video bytes. */
+export async function sourceRevision(file: string) {
+  const info = await stat(file);
+  return createHash('sha256')
+    .update(`${path.resolve(file)}:${info.size}:${info.mtimeMs}`)
+    .digest('hex')
+    .slice(0, 32);
+}
 export const newId = () => randomUUID();
 export async function initWorkspace(
   root: string,

@@ -5,6 +5,7 @@ export type Status = 'pending_review' | 'approved' | 'rejected';
 export type Clip = {
   id: string;
   source_path: string;
+  source_revision?: string | null;
   duration: number;
   width: number;
   height: number;
@@ -45,7 +46,7 @@ export class Store {
   constructor(root: string) {
     this.db = new DatabaseSync(dbPath(root));
     this.db.exec(`PRAGMA journal_mode=WAL;
-      CREATE TABLE IF NOT EXISTS clips(id TEXT PRIMARY KEY,source_path TEXT NOT NULL,duration REAL NOT NULL,width INTEGER NOT NULL,height INTEGER NOT NULL,analyzed_at TEXT NOT NULL,transcript TEXT);
+      CREATE TABLE IF NOT EXISTS clips(id TEXT PRIMARY KEY,source_path TEXT NOT NULL,source_revision TEXT,duration REAL NOT NULL,width INTEGER NOT NULL,height INTEGER NOT NULL,analyzed_at TEXT NOT NULL,transcript TEXT);
       CREATE TABLE IF NOT EXISTS highlights(id TEXT PRIMARY KEY,clip_id TEXT NOT NULL REFERENCES clips(id),start REAL NOT NULL,end REAL NOT NULL,title TEXT NOT NULL,description TEXT NOT NULL,score INTEGER NOT NULL,status TEXT NOT NULL CHECK(status IN ('pending_review','approved','rejected')),origin TEXT NOT NULL,created_at TEXT NOT NULL);
       CREATE INDEX IF NOT EXISTS idx_highlights_clip ON highlights(clip_id);
       CREATE TABLE IF NOT EXISTS clip_scans(id TEXT PRIMARY KEY,source_path TEXT NOT NULL,duration REAL,has_audio INTEGER,decision TEXT NOT NULL,reason TEXT,scanned_at TEXT NOT NULL);
@@ -72,6 +73,11 @@ export class Store {
     const usageColumns = this.db.prepare('PRAGMA table_info(ai_usage)').all() as Array<{
       name: string;
     }>;
+    const clipColumns = this.db.prepare('PRAGMA table_info(clips)').all() as Array<{
+      name: string;
+    }>;
+    if (!clipColumns.some((column) => column.name === 'source_revision'))
+      this.db.exec('ALTER TABLE clips ADD COLUMN source_revision TEXT');
     if (!usageColumns.some((c) => c.name === 'cache_write_tokens'))
       this.db.exec('ALTER TABLE ai_usage ADD COLUMN cache_write_tokens INTEGER');
     if (!usageColumns.some((c) => c.name === 'image_count'))
@@ -508,11 +514,12 @@ export class Store {
   upsertClip(clip: Clip) {
     this.db
       .prepare(
-        `INSERT INTO clips VALUES(?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET source_path=excluded.source_path,duration=excluded.duration,width=excluded.width,height=excluded.height,analyzed_at=excluded.analyzed_at,transcript=excluded.transcript`,
+        `INSERT INTO clips(id,source_path,source_revision,duration,width,height,analyzed_at,transcript) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET source_path=excluded.source_path,source_revision=excluded.source_revision,duration=excluded.duration,width=excluded.width,height=excluded.height,analyzed_at=excluded.analyzed_at,transcript=excluded.transcript`,
       )
       .run(
         clip.id,
         clip.source_path,
+        clip.source_revision ?? null,
         clip.duration,
         clip.width,
         clip.height,

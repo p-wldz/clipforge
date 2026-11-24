@@ -2,7 +2,7 @@ import path from 'node:path';
 import { readFile, readdir, rm } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { Store, type Highlight } from '../core/db.js';
-import { stableId, artifactDir, loadConfig, newId } from '../core/paths.js';
+import { stableId, artifactDir, loadConfig, newId, sourceRevision } from '../core/paths.js';
 import { isAnalysisProvider } from '../core/providers.js';
 import { probe, frames, audioEvents, saveJson, sceneChanges } from './media.js';
 import { candidates, padCandidateBoundary, type CandidateSignal } from './highlights.js';
@@ -81,13 +81,16 @@ export async function analyze(
         id = stableId(full),
         folder = artifactDir(root, id),
         name = path.basename(file);
-      if (db.clip(id) && !options.force) {
-        event('skip', `${name}: already indexed; --force to reanalyze`, id, 'info', name);
-        processed++;
-        db.progressRun(runId, 'skip', name, processed);
-        continue;
-      }
       try {
+        const existing = db.clip(id);
+        const revision = await sourceRevision(full);
+        const sourceChanged = !!existing?.source_revision && existing.source_revision !== revision;
+        if (existing && !options.force && existing.source_revision === revision) {
+          event('skip', `${name}: source unchanged; --force to reanalyze`, id, 'info', name);
+          processed++;
+          db.progressRun(runId, 'skip', name, processed);
+          continue;
+        }
         const stageErrors: Array<{
           stage: string;
           message: string;
@@ -133,6 +136,27 @@ export async function analyze(
           processed++;
           db.progressRun(runId, 'filtered', name, processed);
           continue;
+        }
+        if (sourceChanged) {
+          // A replacement at the same path invalidates generated artifacts and old candidate ranges.
+          // User feedback becomes clip-level review observations before candidate rows are removed.
+          const removed = db.resetClipHighlights(id);
+          await rm(folder, { recursive: true, force: true });
+          event(
+            'source-revision',
+            `${name}: source changed; reset ${removed} generated highlight(s) and invalidated artifacts`,
+            id,
+            'warn',
+            name,
+          );
+        } else if (existing && !existing.source_revision) {
+          event(
+            'source-revision',
+            `${name}: recording source revision for this legacy clip`,
+            id,
+            'info',
+            name,
+          );
         }
         db.saveScan(id, full, meta.duration, meta.hasAudio, 'analyze', null);
         event('audio', `${name}: extracting audio activity and peaks`, id, 'info', name);
@@ -201,6 +225,7 @@ export async function analyze(
         db.upsertClip({
           id,
           source_path: full,
+          source_revision: revision,
           duration: meta.duration,
           width: meta.width,
           height: meta.height,
