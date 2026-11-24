@@ -19,6 +19,12 @@ import { suggestFilm, latestFilmProposal } from './agents/montage.js';
 import { contexts } from './pipeline/staged-ai.js';
 import { dashboardStatus, type DashboardRun } from './core/dashboard-status.js';
 import { loadEnvironmentFile } from './core/environment.js';
+import {
+  evaluateHighlights,
+  evaluationFixturePath,
+  evaluationTemplate,
+  loadEvaluationFixture,
+} from './pipeline/evaluation.js';
 const usage = `clipforge-local - local-first gameplay highlights\n\nCommands:\n  init [folder] [--interactive]         Initialize workspace (project questions)\n  doctor [--json]                      Check installed tools (no LLM)\n  setup [--interactive] [--transcription] [--sound-classifier] [--device cpu|cuda|auto] [--scope project|user] [--dry-run] [--yes]  Install missing dependencies with consent\n  usage [run-id]                       Reported token usage, billing observations and optional pricing estimates\n  ai models                            Discover provider model catalogs (access test still required)
   ai set <understanding|contextual|editing|critical|direction|clip|montage> <codex|claude|deepseek|openai|anthropic|none> [model-id]  Choose agent and model for a stage
   ai test <understanding|contextual|editing|critical|direction|clip|montage>  Make a real model call for a configured stage
@@ -153,7 +159,9 @@ async function main() {
         if (
           profile.provider !== 'codex' &&
           profile.provider !== 'claude' &&
-          profile.provider !== 'deepseek' && profile.provider !== 'openai' && profile.provider !== 'anthropic'
+          profile.provider !== 'deepseek' &&
+          profile.provider !== 'openai' &&
+          profile.provider !== 'anthropic'
         )
           throw new Error('Stage requires a supported AI provider');
         const result = await smokeTestAgent(root, profile.provider, profile.model);
@@ -210,8 +218,7 @@ async function main() {
         config.aiStages?.montage?.provider ??
         config.aiStages?.filmDirection?.provider ??
         config.agent.provider;
-      if (!isAnalysisProvider(provider))
-        throw new Error('Choose a supported AI provider');
+      if (!isAnalysisProvider(provider)) throw new Error('Choose a supported AI provider');
       const db = new Store(root);
       try {
         const items = db.highlights().filter((h) => h.status !== 'rejected');
@@ -369,6 +376,51 @@ async function main() {
         provider: override,
       });
       console.log(JSON.stringify(result));
+      return;
+    }
+    case 'reanalyze': {
+      const id = args[0];
+      if (!id) throw new Error('Missing clip ID');
+      const db = new Store(root);
+      let source: string;
+      try {
+        const clip = db.clip(id);
+        if (!clip) throw new Error('Unknown clip ID');
+        source = clip.source_path;
+        if (flags.has('--reset')) {
+          const removed = db.resetClipHighlights(id);
+          console.log(
+            `Reset ${removed} generated highlight(s); review observations were preserved.`,
+          );
+        }
+      } finally {
+        db.close();
+      }
+      const result = await analyze(root, source!, {
+        withAgent: flags.has('--agent'),
+        force: true,
+        provider: agentChoice,
+      });
+      console.log(JSON.stringify(result));
+      return;
+    }
+    case 'evaluate': {
+      if (flags.has('--init')) {
+        const file = evaluationFixturePath(root);
+        if (existsSync(file)) throw new Error(`Evaluation fixture already exists: ${file}`);
+        await writeFile(file, JSON.stringify(evaluationTemplate, null, 2) + '\n', 'utf8');
+        console.log(
+          `Created ${file}. Replace the example clip ID and timestamps, then run: clipforge evaluate`,
+        );
+        return;
+      }
+      const fixture = await loadEvaluationFixture(root);
+      const db = new Store(root);
+      try {
+        console.log(JSON.stringify(evaluateHighlights(fixture, db.highlights()), null, 2));
+      } finally {
+        db.close();
+      }
       return;
     }
     case 'search': {

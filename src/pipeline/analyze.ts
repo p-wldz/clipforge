@@ -5,7 +5,7 @@ import { Store, type Highlight } from '../core/db.js';
 import { stableId, artifactDir, loadConfig, newId } from '../core/paths.js';
 import { isAnalysisProvider } from '../core/providers.js';
 import { probe, frames, audioEvents, saveJson, sceneChanges } from './media.js';
-import { candidates, type CandidateSignal } from './highlights.js';
+import { candidates, padCandidateBoundary, type CandidateSignal } from './highlights.js';
 import { classifySound } from './sound-classifier.js';
 import { inspectAudio } from './audio-signals.js';
 import { transcribe } from './transcribe.js';
@@ -39,9 +39,7 @@ export async function analyze(
   if (options.withAgent && provider === 'none')
     throw new Error('No agent selected. Run clipforge agent codex or use --agent codex');
   if (provider === 'cursor')
-    throw new Error(
-      'Cursor analysis adapter is not implemented. Choose a supported AI provider.',
-    );
+    throw new Error('Cursor analysis adapter is not implemented. Choose a supported AI provider.');
   const db = new Store(root),
     runId = newId();
   let processed = 0,
@@ -257,6 +255,10 @@ export async function analyze(
           candidateSignals,
           config.analysis.maxHighlightsPerClip,
           config.analysis.highlightDurationSeconds,
+          {
+            preRollSeconds: config.analysis.candidatePreRollSeconds,
+            postRollSeconds: config.analysis.candidatePostRollSeconds,
+          },
         );
         throwIfCancelled();
         if (provider !== 'none') {
@@ -272,6 +274,8 @@ export async function analyze(
             transcript: segments,
             soundEvents: classified,
             audioSignals: audioSignals.events,
+            // User-owned notes are included only in an explicitly requested AI run.
+            reviewObservations: db.reviewObservations(id),
           };
           const max = config.analysis.maxImagesPerClip ?? 8;
           const selection = selectFrames(
@@ -413,18 +417,23 @@ export async function analyze(
               'info',
               name,
             );
-            let result = await contextualEditing(root, db, {
-              clipId: id,
-              duration: meta.duration,
-              understanding: deepAction,
-              context: scopedContexts.editing || context,
-              config: {
-                ...config,
-                aiStages: { ...config.aiStages, editing: editingProfile },
+            let result = await contextualEditing(
+              root,
+              db,
+              {
+                clipId: id,
+                duration: meta.duration,
+                understanding: deepAction,
+                context: scopedContexts.editing || context,
+                config: {
+                  ...config,
+                  aiStages: { ...config.aiStages, editing: editingProfile },
+                },
+                runId,
+                signal: options.signal,
               },
-              runId,
-              signal: options.signal,
-            }, (message) => event('editing', `${name}: ${message}`, id, 'info', name));
+              (message) => event('editing', `${name}: ${message}`, id, 'info', name),
+            );
             if ((config.analysis.criticalReviewPasses ?? 0) > 0) {
               event(
                 'critical-review',
@@ -437,16 +446,22 @@ export async function analyze(
                 result = {
                   ...result,
                   decisions: (
-                    await criticalReview(root, db, {
-                      clipId: id,
-                      duration: meta.duration,
-                      understanding: deepAction,
-                      context: scopedContexts.editing || context,
-                      decisions: result.decisions,
-                      config,
-                      runId,
-                      signal: options.signal,
-                    }, (message) => event('critical-review', `${name}: ${message}`, id, 'info', name))
+                    await criticalReview(
+                      root,
+                      db,
+                      {
+                        clipId: id,
+                        duration: meta.duration,
+                        understanding: deepAction,
+                        context: scopedContexts.editing || context,
+                        decisions: result.decisions,
+                        config,
+                        runId,
+                        signal: options.signal,
+                      },
+                      (message) =>
+                        event('critical-review', `${name}: ${message}`, id, 'info', name),
+                    )
                   ).decisions,
                 };
               } catch (e) {
@@ -462,23 +477,30 @@ export async function analyze(
             highlights = result.decisions
               .filter((d) => d.include)
               .slice(0, config.analysis.maxHighlightsPerClip)
-              .map(
-                (d, i): Highlight => ({
+              .map((d, i): Highlight => {
+                const interval = padCandidateBoundary(
+                  { start: d.start, end: d.end },
+                  meta.duration,
+                  {
+                    preRollSeconds: config.analysis.candidatePreRollSeconds,
+                    postRollSeconds: config.analysis.candidatePostRollSeconds,
+                  },
+                );
+                return {
                   id: createHash('sha256')
-                    .update(`${id}:action:${d.actionId}:${d.start}:${d.end}:${i}`)
+                    .update(`${id}:action:${d.actionId}:${interval.start}:${interval.end}:${i}`)
                     .digest('hex')
                     .slice(0, 20),
                   clip_id: id,
-                  start: d.start,
-                  end: d.end,
+                  ...interval,
                   title: d.title,
                   description: `${d.description}\nReason: ${d.reason}\nAction: ${d.actionId}${d.conversationId ? `\nConversation: ${d.conversationId}\nNarrative phases: ${d.narrativePhaseCoverage.join(', ') || 'unspecified'}\nMissing-context risks: ${d.missingContextRisks.join('; ') || 'none recorded'}` : ''}${d.accelerate.length ? `\nAcceleration suggested: ${JSON.stringify(d.accelerate)}` : ''}`,
                   score: Math.round(d.confidence * 100),
                   status: 'pending_review',
                   origin: provider,
                   created_at: new Date().toISOString(),
-                }),
-              );
+                };
+              });
             const analysis = {
               title: 'Contextual editing proposal',
               summary: deepAction.summary,

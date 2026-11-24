@@ -25,10 +25,7 @@ import { contexts } from './pipeline/staged-ai.js';
 import { validateCatalog } from './core/usage.js';
 import { AppError, errorLogEntry, errorStatus, publicError } from './core/errors.js';
 import { analysisProviders, isAnalysisProvider, providerInfo } from './core/providers.js';
-import {
-  browserPreviewMetadataPath,
-  browserPreviewPath,
-} from './core/browser-playback.js';
+import { browserPreviewMetadataPath, browserPreviewPath } from './core/browser-playback.js';
 import { run } from './core/process.js';
 const dashboardRoot = fileURLToPath(new URL('./dashboard/', import.meta.url));
 const contentTypes: Record<string, string> = {
@@ -120,7 +117,11 @@ export function startServer(root: string, port: number, host = '127.0.0.1'): Das
       const url = new URL(req.url ?? '/', `http://${host}:${port}`);
       const parts = url.pathname.split('/').filter(Boolean);
       if (url.pathname === '/api/ai/providers' && req.method === 'GET')
-        return send(res, 200, analysisProviders.map((id) => ({ id, ...providerInfo[id] })));
+        return send(
+          res,
+          200,
+          analysisProviders.map((id) => ({ id, ...providerInfo[id] })),
+        );
       if (url.pathname === '/api/ai/pricing' && req.method === 'GET') {
         const config = await loadConfig(root);
         return send(res, 200, config.pricing ?? {});
@@ -224,7 +225,9 @@ export function startServer(root: string, port: number, host = '127.0.0.1'): Das
           {
             withAgent: provider !== 'none',
             provider:
-              provider === 'none' ? undefined : (provider as 'codex' | 'claude' | 'deepseek' | 'openai'),
+              provider === 'none'
+                ? undefined
+                : (provider as 'codex' | 'claude' | 'deepseek' | 'openai'),
             force: input.force,
             signal: controller.signal,
           },
@@ -242,6 +245,88 @@ export function startServer(root: string, port: number, host = '127.0.0.1'): Das
                   ? {
                       error: `${result.warnings} warnings; ${result.failedFiles} failed files`,
                     }
+                  : {}),
+              });
+            },
+            (error) => {
+              Object.assign(job, {
+                status: controller.signal.aborted ? 'cancelled' : 'failed',
+                error: (error as Error).message,
+              });
+            },
+          )
+          .finally(() => {
+            analysisStarting = false;
+          });
+        return send(res, 202, { jobId, status: 'running' });
+      }
+      if (
+        parts[0] === 'api' &&
+        parts[1] === 'clips' &&
+        parts[2] &&
+        parts[3] === 'reanalyze' &&
+        parts.length === 4 &&
+        req.method === 'POST'
+      ) {
+        if (
+          analysisStarting ||
+          [...activeAnalysisJobs.values()].some((j) => j.status === 'running')
+        )
+          return send(res, 409, { error: 'Analysis already running in this dashboard' });
+        if (
+          db
+            .runs()
+            .some(
+              (r: any) =>
+                r.status === 'running' && Date.now() - Date.parse(r.started_at) < 60 * 60 * 1000,
+            )
+        )
+          return send(res, 409, {
+            error: 'An analysis run is already active. Check Pipeline progress.',
+          });
+        const input = await jsonBody(req);
+        if (input.reset !== true)
+          throw new Error('Reanalyzing one clip requires explicit reset confirmation');
+        const clip = db.clip(parts[2]);
+        if (!clip) throw new Error('Clip not found');
+        const config = await loadConfig(root);
+        const provider =
+          input.provider ??
+          config.aiStages?.understanding?.provider ??
+          config.aiStages?.clipAnalysis?.provider ??
+          config.agent.provider;
+        if (provider !== 'none' && !isAnalysisProvider(provider))
+          throw new Error('Unsupported analysis provider');
+        db.resetClipHighlights(clip.id);
+        const jobId = newId();
+        analysisStarting = true;
+        const controller = new AbortController();
+        const job: AnalysisJob = { status: 'running', controller };
+        activeAnalysisJobs.set(jobId, job);
+        job.completion = analyze(
+          root,
+          clip.source_path,
+          {
+            withAgent: provider !== 'none',
+            provider:
+              provider === 'none'
+                ? undefined
+                : (provider as 'codex' | 'claude' | 'deepseek' | 'openai'),
+            force: true,
+            signal: controller.signal,
+          },
+          () => {},
+        )
+          .then(
+            (result) => {
+              Object.assign(job, {
+                status: controller.signal.aborted
+                  ? 'cancelled'
+                  : result.warnings > 0
+                    ? 'completed_with_warnings'
+                    : 'completed',
+                ...(result.warnings > 0
+                  ? { error: `${result.warnings} warnings; ${result.failedFiles} failed files` }
                   : {}),
               });
             },
@@ -655,8 +740,7 @@ export function startServer(root: string, port: number, host = '127.0.0.1'): Das
         const stage = input.stage === 'montage' ? 'montage' : 'clipAnalysis';
         const profile = config.aiStages?.[stage] ?? config.agent;
         const provider = input.provider ?? profile.provider;
-        if (!isAnalysisProvider(provider))
-          throw new Error('Select a supported AI provider');
+        if (!isAnalysisProvider(provider)) throw new Error('Select a supported AI provider');
         // Explicit action only, never called by polling.
         const result = await smokeTestAgent(
           root,
@@ -1045,8 +1129,7 @@ export function startServer(root: string, port: number, host = '127.0.0.1'): Das
       const path = (req.url ?? '/').split('?')[0] ?? '/';
       // Do not log request bodies, headers, query strings, or stack traces.
       console.error(errorLogEntry({ requestId, method: req.method, path, error: e }));
-      if (!res.headersSent)
-        send(res, errorStatus(e), { ...publicError(e), requestId });
+      if (!res.headersSent) send(res, errorStatus(e), { ...publicError(e), requestId });
       else res.destroy();
     } finally {
       try {

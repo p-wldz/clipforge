@@ -26,7 +26,10 @@ test('AI stage profiles preserve legacy agent and expose API model scan', async 
     res = await fetch(base + '/api/ai/providers');
     assert.equal(res.status, 200);
     const providers = await res.json();
-    assert.equal(providers.find((provider) => provider.id === 'anthropic').environment, 'ANTHROPIC_API_KEY');
+    assert.equal(
+      providers.find((provider) => provider.id === 'anthropic').environment,
+      'ANTHROPIC_API_KEY',
+    );
     assert.equal(providers.find((provider) => provider.id === 'codex').auth, 'installed-client');
     res = await fetch(base + '/api/ai/stages', {
       method: 'PUT',
@@ -101,6 +104,65 @@ test('dashboard analysis start checks inputs and reports failures asynchronously
     assert.equal(status.status, 'completed');
   } finally {
     await new Promise((r) => server.close(r));
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('dashboard can reset and reanalyze one clip while retaining its review observation', async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'clipforge-single-rerun-'));
+  await initWorkspace(dir);
+  const db = new Store(dir);
+  try {
+    db.upsertClip({
+      id: 'clip',
+      source_path: path.join(dir, 'missing.mp4'),
+      duration: 10,
+      width: 1,
+      height: 1,
+      analyzed_at: new Date().toISOString(),
+      transcript: null,
+    });
+    db.upsertHighlight({
+      id: 'highlight',
+      clip_id: 'clip',
+      start: 1,
+      end: 3,
+      title: 'Old',
+      description: '',
+      score: 50,
+      status: 'pending_review',
+      origin: 'heuristic',
+      created_at: new Date().toISOString(),
+    });
+    db.saveFeedback({
+      highlightId: 'highlight',
+      category: 'starts_too_late',
+      notes: 'More lead-in',
+    });
+  } finally {
+    db.close();
+  }
+  const server = startServer(dir, 0);
+  await new Promise((resolve) =>
+    server.listening ? resolve() : server.once('listening', resolve),
+  );
+  try {
+    const base = `http://127.0.0.1:${server.address().port}`;
+    const result = await fetch(base + '/api/clips/clip/reanalyze', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reset: true, provider: 'none' }),
+    });
+    assert.equal(result.status, 202);
+    const after = new Store(dir);
+    try {
+      assert.equal(after.highlight('highlight'), undefined);
+      assert.equal(after.reviewObservations('clip')[0].notes, 'More lead-in');
+    } finally {
+      after.close();
+    }
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
     await rm(dir, { recursive: true, force: true });
   }
 });

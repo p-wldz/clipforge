@@ -205,6 +205,7 @@ Setup uses an isolated Python environment, not global `pip`. It can download loc
 | `clipforge init [folder]` | Create a project workspace. |
 | `clipforge doctor` | Check dependencies without installing or invoking AI. |
 | `clipforge analyze [file\|folder]` | Run local analysis and create review candidates. |
+| `clipforge reanalyze <clip-id> [--reset]` | Re-run one indexed clip, optionally replacing its generated candidates while retaining review observations. |
 | `clipforge dashboard` | Open the local review dashboard on `127.0.0.1`. |
 | `clipforge highlights` | List candidate highlights. |
 | `clipforge approve <id>` | Approve a reviewed highlight. |

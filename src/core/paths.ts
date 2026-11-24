@@ -38,6 +38,9 @@ export interface Config {
     maxFramesPerHighlight: number;
     maxHighlightsPerClip: number;
     highlightDurationSeconds: number;
+    /** Extra context added to generated candidate boundaries; saved user cuts stay untouched. */
+    candidatePreRollSeconds?: number;
+    candidatePostRollSeconds?: number;
     minAudioSilenceSeconds: number;
     minDurationSeconds: number;
     maxDurationSeconds: number | null;
@@ -82,6 +85,8 @@ export const defaultConfig: Config = {
     maxFramesPerHighlight: 4,
     maxHighlightsPerClip: 6,
     highlightDurationSeconds: 12,
+    candidatePreRollSeconds: 0,
+    candidatePostRollSeconds: 0,
     minAudioSilenceSeconds: 1.3,
     minDurationSeconds: 0,
     maxDurationSeconds: null,
@@ -220,10 +225,7 @@ export async function initWorkspace(
 export async function loadConfig(root: string): Promise<Config> {
   const file = await readFile(path.join(workspaceDir(root), 'config.json'), 'utf8');
   const input = JSON.parse(file) as Partial<Config>;
-  if (
-    input.version !== 1 ||
-    !isKnownProvider(input.agent?.provider)
-  )
+  if (input.version !== 1 || !isKnownProvider(input.agent?.provider))
     throw new Error(
       'Invalid config: expected version=1 and agent.provider=none|codex|claude|cursor|deepseek|openai',
     );
@@ -287,6 +289,12 @@ export function validateAnalysis(a: Config['analysis']) {
     throw new Error('Critical review passes must be 0 or 1');
   if (!Number.isFinite(a.minDurationSeconds) || a.minDurationSeconds < 0)
     throw new Error('Minimum duration must be nonnegative');
+  for (const [name, value] of Object.entries({
+    candidatePreRollSeconds: a.candidatePreRollSeconds ?? 0,
+    candidatePostRollSeconds: a.candidatePostRollSeconds ?? 0,
+  }))
+    if (!Number.isFinite(value) || value < 0 || value > 30)
+      throw new Error(`${name} must be between 0 and 30 seconds`);
   if (
     a.maxDurationSeconds !== null &&
     (!Number.isFinite(a.maxDurationSeconds) ||
@@ -297,10 +305,7 @@ export function validateAnalysis(a: Config['analysis']) {
 }
 
 export async function saveConfig(root: string, config: Config) {
-  if (
-    config.version !== 1 ||
-    !isKnownProvider(config.agent.provider)
-  )
+  if (config.version !== 1 || !isKnownProvider(config.agent.provider))
     throw new Error('Invalid provider');
   if (!['project', 'user'].includes(config.toolsScope ?? 'project'))
     throw new Error('Invalid tools scope');

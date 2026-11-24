@@ -18,6 +18,10 @@
 
 Highlight `status`: `pending_review | approved | rejected`. `origin`: `heuristic | codex | claude`. Time units are seconds, start inclusive, end exclusive. Scores 0–100; heuristic score 50 represents an unverified candidate.
 
+`analysis.candidatePreRollSeconds` and `candidatePostRollSeconds` add optional review context to generated heuristic and AI candidate boundaries, clipped to source duration. They never modify a user-saved cut. Resetting one clip preserves its user feedback as local clip-level review observations while removing generated highlights and their montage references.
+
+`.clipforge/evaluation.json` is an optional, local version-1 benchmark fixture. It contains manually labeled `{id,clipId,start,end,label?}` moments and is never uploaded. `clipforge evaluate` matches proposals one-to-one using IoU 0.2, then reports precision, recall, mean boundary error, duplicates, and unmatched IDs.
+
 For AI-derived highlights, an included Deep Action's saved interval must include its observed `beginning` phase and its `reaction` phase when present (otherwise its `resolution`, otherwise the action end). This is a non-destructive narrative-completeness guard; acceleration remains an editorial proposal, not an alteration of source media.
 
 ## HTTP API

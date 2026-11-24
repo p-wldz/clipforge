@@ -4,6 +4,19 @@ export interface Interval {
   start: number;
   end: number;
 }
+export type BoundaryPadding = { preRollSeconds?: number; postRollSeconds?: number };
+
+/** Add configurable review context without extending outside the source clip. */
+export function padCandidateBoundary(
+  interval: Interval,
+  duration: number,
+  padding: BoundaryPadding = {},
+): Interval {
+  return {
+    start: Math.max(0, interval.start - (padding.preRollSeconds ?? 0)),
+    end: Math.min(duration, interval.end + (padding.postRollSeconds ?? 0)),
+  };
+}
 export type CandidateSignal = Interval & {
   source?: 'audio_activity' | 'volume_peak' | 'speech' | 'sound_event' | 'scene_change';
 };
@@ -28,6 +41,7 @@ export function candidates(
   active: CandidateSignal[],
   limit: number,
   target: number,
+  padding: BoundaryPadding = {},
 ): Highlight[] {
   const windows: Interval[] = [];
   const evidence = new Map<string, string[]>();
@@ -59,20 +73,22 @@ export function candidates(
     windows.push({ start: 0, end: Math.min(duration, target) });
   return windows
     .sort((a, b) => a.start - b.start)
-    .map((w, i) => ({
-      id: createHash('sha256')
-        .update(`${clipId}:${w.start.toFixed(2)}:${w.end.toFixed(2)}`)
-        .digest('hex')
-        .slice(0, 20),
-      clip_id: clipId,
-      start: Number(w.start.toFixed(2)),
-      end: Number(w.end.toFixed(2)),
-      title: `Candidate ${i + 1}`,
-      description:
-        `${[...new Set(evidence.get(`${w.start.toFixed(2)}:${w.end.toFixed(2)}`) ?? [])].join(', ') || 'local activity'} candidate; requires review. No gameplay event has been verified.`,
-      score: 50,
-      status: 'pending_review',
-      origin: 'heuristic',
-      created_at: new Date().toISOString(),
-    }));
+    .map((window, i) => {
+      const w = padCandidateBoundary(window, duration, padding);
+      return {
+        id: createHash('sha256')
+          .update(`${clipId}:${w.start.toFixed(2)}:${w.end.toFixed(2)}`)
+          .digest('hex')
+          .slice(0, 20),
+        clip_id: clipId,
+        start: Number(w.start.toFixed(2)),
+        end: Number(w.end.toFixed(2)),
+        title: `Candidate ${i + 1}`,
+        description: `${[...new Set(evidence.get(`${w.start.toFixed(2)}:${w.end.toFixed(2)}`) ?? [])].join(', ') || 'local activity'} candidate; requires review. No gameplay event has been verified.`,
+        score: 50,
+        status: 'pending_review',
+        origin: 'heuristic',
+        created_at: new Date().toISOString(),
+      };
+    });
 }

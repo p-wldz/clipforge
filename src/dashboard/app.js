@@ -14,15 +14,22 @@ let providerChoices = [];
 async function loadProviderChoices() {
   const choices = await api('/api/ai/providers');
   providerChoices = choices;
-  const select = $('#analysis-provider'), selected = select.value;
-  select.innerHTML = '<option value="none">No AI</option>' + choices.map((choice) => `<option value="${choice.id}">${choice.label}</option>`).join('');
+  const select = $('#analysis-provider'),
+    selected = select.value;
+  select.innerHTML =
+    '<option value="none">No AI</option>' +
+    choices.map((choice) => `<option value="${choice.id}">${choice.label}</option>`).join('');
   select.value = selected;
-  providerHints = { ...providerHints, ...Object.fromEntries(choices.map((choice) => [choice.id, choice.hint])) };
+  providerHints = {
+    ...providerHints,
+    ...Object.fromEntries(choices.map((choice) => [choice.id, choice.hint])),
+  };
   updateProviderHelp();
 }
 function updateProviderHelp() {
   const provider = $('#analysis-provider').value;
-  providerHelp.textContent = providerHints[provider] || 'Choose a provider, then test it before analyzing media.';
+  providerHelp.textContent =
+    providerHints[provider] || 'Choose a provider, then test it before analyzing media.';
 }
 $('#analysis-provider').addEventListener('change', updateProviderHelp);
 updateProviderHelp();
@@ -313,7 +320,9 @@ async function showHighlight(id) {
         const video = $('#review-player');
         video.src = result.url;
         video.load();
-        notify(result.cached ? 'Using the existing local MP4 preview' : 'Local MP4 preview created');
+        notify(
+          result.cached ? 'Using the existing local MP4 preview' : 'Local MP4 preview created',
+        );
       });
     });
   }
@@ -323,7 +332,7 @@ async function showHighlight(id) {
   );
   $('#review-to-film').insertAdjacentHTML(
     'beforebegin',
-    '<button id="review-delete" class="button-secondary danger-button">Delete</button>',
+    '<button id="review-reanalyze" class="button-secondary">Re-analyze this clip</button><button id="review-delete" class="button-secondary danger-button">Delete</button>',
   );
   const update = async (status) => {
     try {
@@ -345,6 +354,31 @@ async function showHighlight(id) {
   $('#review-to-film').onclick = async () => {
     navigate('studio');
     await addHighlightIds([h.id]);
+  };
+  $('#review-reanalyze').onclick = async () => {
+    const usingAi = $('#analysis-provider').value !== 'none';
+    if (
+      !confirm(
+        `Re-analyze this clip? Its generated highlights will be replaced and removed from film projects. Your feedback and missed moments stay local.${usingAi ? ' The selected AI will receive saved review observations for this clip.' : ''}`,
+      )
+    )
+      return;
+    try {
+      await clickTask($('#review-reanalyze'), 'Re-analyzing...', async () => {
+        const result = await send(`/api/clips/${encodeURIComponent(h.clip_id)}/reanalyze`, 'POST', {
+          reset: true,
+          provider: $('#analysis-provider').value,
+        });
+        uiJob = result.jobId;
+        selected = null;
+        $('#review').innerHTML = '<div class="empty">This clip is being re-analyzed.</div>';
+        $('#analysis-job-status').textContent = 'Single-clip analysis in progress...';
+        navigate('home');
+        pollRuns();
+      });
+    } catch (error) {
+      notify(error.message);
+    }
   };
   $('#review-delete').onclick = async () => {
     if (!confirm(`Delete “${h.title}”? This cannot be undone.`)) return;
@@ -1135,7 +1169,9 @@ async function loadInventory() {
   const stages = inventory.stages;
   const stageProviders = providerChoices.length
     ? providerChoices
-    : Object.keys(inventory.providers).filter((id) => id !== 'cursor').map((id) => ({ id, label: id }));
+    : Object.keys(inventory.providers)
+        .filter((id) => id !== 'cursor')
+        .map((id) => ({ id, label: id }));
   $('#stage-config').innerHTML = [
     ['clipAnalysis', 'Clip analysis'],
     ['montage', 'Movie suggestion'],
@@ -1199,29 +1235,63 @@ $('#agent-test-button').onclick = async () => {
   }
 };
 const promptMeta = {
-  'conversation-understanding': ['Conversation context', 'Groups timestamped transcript lines without rewriting what was said.'],
-  'deep-action-analysis': ['Complete action evidence', 'Maps setup, action, outcome, and reaction before any creative selection.'],
-  'contextual-editing': ['Highlight selection', 'Selects complete actions that fit the project brief; it can select none.'],
-  'critical-review': ['Boundary review', 'Checks proposed cuts against saved evidence; it cannot invent a new moment.'],
-  'understanding-base': ['Objective observation', 'Describes source evidence before domain or creative preferences are applied.'],
-  'understanding-contextual': ['Domain interpretation', 'Adds game/domain meaning while retaining the original observations.'],
-  'editing-boundary-refinement': ['Narrative safeguard', 'Keeps necessary setup and reaction when refining a cut.'],
-  'clip-analysis': ['Clip analysis', 'Creates an evidence-based overview and candidate moments for one source clip.'],
-  'highlight-selection': ['Cut-point guidance', 'Explains how selected moments should retain context and payoff.'],
-  montage: ['Film proposal', 'Orders existing highlights into an editable proposal; it never renders automatically.'],
+  'conversation-understanding': [
+    'Conversation context',
+    'Groups timestamped transcript lines without rewriting what was said.',
+  ],
+  'deep-action-analysis': [
+    'Complete action evidence',
+    'Maps setup, action, outcome, and reaction before any creative selection.',
+  ],
+  'contextual-editing': [
+    'Highlight selection',
+    'Selects complete actions that fit the project brief; it can select none.',
+  ],
+  'critical-review': [
+    'Boundary review',
+    'Checks proposed cuts against saved evidence; it cannot invent a new moment.',
+  ],
+  'understanding-base': [
+    'Objective observation',
+    'Describes source evidence before domain or creative preferences are applied.',
+  ],
+  'understanding-contextual': [
+    'Domain interpretation',
+    'Adds game/domain meaning while retaining the original observations.',
+  ],
+  'editing-boundary-refinement': [
+    'Narrative safeguard',
+    'Keeps necessary setup and reaction when refining a cut.',
+  ],
+  'clip-analysis': [
+    'Clip analysis',
+    'Creates an evidence-based overview and candidate moments for one source clip.',
+  ],
+  'highlight-selection': [
+    'Cut-point guidance',
+    'Explains how selected moments should retain context and payoff.',
+  ],
+  montage: [
+    'Film proposal',
+    'Orders existing highlights into an editable proposal; it never renders automatically.',
+  ],
   'film-direction': ['Film direction', 'Sets the desired arc and pacing for a whole montage.'],
-  'film-regeneration': ['Proposal revision', 'Improves a saved film proposal using the latest user guidance.'],
-  'agent-test': ['Connection test', 'Verifies a provider can return the expected small JSON response.'],
+  'film-regeneration': [
+    'Proposal revision',
+    'Improves a saved film proposal using the latest user guidance.',
+  ],
+  'agent-test': [
+    'Connection test',
+    'Verifies a provider can return the expected small JSON response.',
+  ],
 };
 async function loadPrompts() {
   const prompts = await api('/api/prompts');
   $('#prompts-panel').innerHTML = Object.entries(prompts)
-    .map(
-      ([name, value]) => {
-        const [title, description] = promptMeta[name] || [name, 'Advanced project instruction.'];
-        return `<div class="prompt-entry"><h3 title="${safe(name)}.md">${safe(title)}</h3><p class="muted little">${safe(description)}</p><textarea id="prompt-${safe(name)}" rows="11" aria-label="${safe(title)} prompt">${safe(value)}</textarea><button data-prompt-save="${safe(name)}" class="button-secondary">Save ${safe(title)}</button></div>`;
-      },
-    )
+    .map(([name, value]) => {
+      const [title, description] = promptMeta[name] || [name, 'Advanced project instruction.'];
+      return `<div class="prompt-entry"><h3 title="${safe(name)}.md">${safe(title)}</h3><p class="muted little">${safe(description)}</p><textarea id="prompt-${safe(name)}" rows="11" aria-label="${safe(title)} prompt">${safe(value)}</textarea><button data-prompt-save="${safe(name)}" class="button-secondary">Save ${safe(title)}</button></div>`;
+    })
     .join('');
   $$('[data-prompt-save]').forEach(
     (b) =>
@@ -1242,6 +1312,10 @@ function renderProcessing() {
   const c = settings.config;
   $('#processing-fields').innerHTML =
     `<label>Clips directory<input id="cfg-directory" value="${safe(c.mediaDir)}"></label><label>Screenshot interval (seconds)<input id="cfg-interval" type="number" min="0.1" step="0.1" value="${c.analysis.frameIntervalSeconds}"></label><label>Max clip duration (seconds)<input id="cfg-duration" type="number" min="1" value="${c.analysis.maxDurationSeconds ?? ''}" placeholder="Unlimited"></label><label>Max images sent to AI (1–30)<input id="cfg-image-limit" type="number" min="1" max="30" value="${c.analysis.maxImagesPerClip ?? 8}"></label><label>Screenshot max width (px)<input id="cfg-image-width" type="number" min="256" max="1920" step="1" value="${c.analysis.imageMaxWidth ?? 640}"></label><label>Max highlights per clip<input id="cfg-highlights" type="number" min="1" value="${c.analysis.maxHighlightsPerClip}"></label><label><input id="cfg-transcription" type="checkbox" ${c.transcription.enabled ? 'checked' : ''}> Enable transcription</label><label><input id="cfg-sounds" type="checkbox" ${c.soundClassifier.enabled ? 'checked' : ''}> Enable sound classifier</label>`;
+  $('#processing-fields').insertAdjacentHTML(
+    'beforeend',
+    `<label>Candidate lead-in (seconds)<input id="cfg-pre-roll" type="number" min="0" max="30" step="0.1" value="${c.analysis.candidatePreRollSeconds ?? 0}"></label><label>Candidate tail (seconds)<input id="cfg-post-roll" type="number" min="0" max="30" step="0.1" value="${c.analysis.candidatePostRollSeconds ?? 0}"></label>`,
+  );
 }
 $('#save-processing').onclick = async () => {
   try {
@@ -1254,6 +1328,8 @@ $('#save-processing').onclick = async () => {
     c.analysis.maxHighlightsPerClip = Number($('#cfg-highlights').value);
     c.analysis.maxImagesPerClip = Number($('#cfg-image-limit').value);
     c.analysis.imageMaxWidth = Number($('#cfg-image-width').value);
+    c.analysis.candidatePreRollSeconds = Number($('#cfg-pre-roll').value);
+    c.analysis.candidatePostRollSeconds = Number($('#cfg-post-roll').value);
     c.transcription.enabled = $('#cfg-transcription').checked;
     c.soundClassifier.enabled = $('#cfg-sounds').checked;
     await send('/api/settings', 'PUT', settings);
