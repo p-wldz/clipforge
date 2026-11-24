@@ -404,8 +404,17 @@ async function showHighlight(id) {
   }
   $('#clip-editorial').insertAdjacentHTML(
     'afterend',
-    '<details class="clip-meta"><summary>Conversation understanding</summary><div id="clip-conversations" class="cards-list">Loading…</div></details>',
+    '<details class="clip-meta"><summary>Conversation understanding</summary><div id="clip-conversations" class="cards-list">Loading…</div></details><details class="clip-meta"><summary>Detected sound events</summary><p class="muted little">Rough AudioSet estimates, not verified gameplay events.</p><div id="clip-sound-events" class="muted little">Loading…</div></details>',
   );
+  api(`/api/sound-events/${encodeURIComponent(h.clip_id)}`)
+    .then((events) => {
+      $('#clip-sound-events').textContent = events.length
+        ? events
+            .map((event) => `${seconds(event.start)}–${seconds(event.end)} · ${event.label} (${Math.round(event.confidence * 100)}%)`)
+            .join('\n')
+        : 'No classified sound events for this clip.';
+    })
+    .catch((error) => ($('#clip-sound-events').textContent = error.message));
   $('#review-to-film').insertAdjacentHTML(
     'beforebegin',
     '<button id="review-reanalyze" class="button-secondary">Re-analyze this clip</button><button id="review-delete" class="button-secondary danger-button">Delete</button>',

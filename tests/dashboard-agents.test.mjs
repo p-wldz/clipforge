@@ -172,6 +172,7 @@ test('dashboard keeps media discovery separate from the AI model inventory and c
   assert.match(app, /mediaInventory = null/);
   assert.match(app, /unmatchedExpectedIds/);
   assert.match(app, /cfg-sound-confidence/);
+  assert.match(app, /clip-sound-events/);
   assert.match(app, /!mediaInventory\?\.files\.length/);
   assert.match(app, /No AI is selected[\s\S]*Start without AI\?/);
 });
