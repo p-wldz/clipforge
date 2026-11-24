@@ -157,6 +157,8 @@ test('dashboard exposes a local quality benchmark without overwriting its fixtur
     db.close();
     response = await fetch(base + '/api/evaluation/moments', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ clipId: 'clip', start: 2, end: 8, label: 'A real expected moment' }) });
     assert.equal(response.status, 201);
+    response = await fetch(base + '/api/evaluation/moments', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ clipId: 'clip', start: 2, end: 8 }) });
+    assert.equal(response.status, 409);
     response = await fetch(base + '/api/evaluation');
     assert.equal((await response.json()).report.expectedMoments, 1);
   } finally {

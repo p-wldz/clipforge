@@ -172,6 +172,12 @@ export function startServer(root: string, port: number, host = '127.0.0.1'): Das
         const clip = db.clip(input.clipId);
         if (!clip || end > clip.duration + 0.05) throw new Error('Invalid evaluation moment');
         const fixture = await loadEvaluationFixture(root);
+        if (
+          fixture.moments.some(
+            (entry) => entry.clipId === clip.id && entry.start === start && entry.end === end,
+          )
+        )
+          return send(res, 409, { error: 'This benchmark range already exists' });
         const moment = {
           id: `expected-${newId()}`,
           clipId: clip.id,
