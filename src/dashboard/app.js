@@ -8,7 +8,7 @@ providerHelp.className = 'muted little';
 providerHelp.setAttribute('role', 'status');
 $('#analysis-provider').closest('label').after(providerHelp);
 let providerHints = {
-  none: 'Local analysis only. No frames, video, audio, or transcripts leave this computer.',
+  none: 'No AI selected. Local analysis is private, but its candidates are less reliable and less context-aware.',
 };
 let providerChoices = [];
 async function loadProviderChoices() {
@@ -106,12 +106,32 @@ let clips = [],
   selectedHighlightIds = new Set(),
   settings = null,
   inventory = null,
+  mediaInventory = null,
   analysisRuns = [],
   uiJob = null,
   playing = false,
   playIndex = 0,
   previewItems = [],
   browserPreviews = new Map();
+function ensureFolderClipStat() {
+  let stat = $('#stat-folder-clips');
+  if (stat) return stat;
+  const container = $('#stat-clips').closest('.stat');
+  container.insertAdjacentHTML(
+    'afterend',
+    '<div class="stat"><strong id="stat-folder-clips">0</strong><span id="folder-clips-label">In clips/</span></div>',
+  );
+  return $('#stat-folder-clips');
+}
+function ensureAnalysisInventory() {
+  let status = $('#analysis-inventory');
+  if (status) return status;
+  $('#start-analysis').insertAdjacentHTML(
+    'beforebegin',
+    '<p id="analysis-inventory" class="muted little" role="status">Checking the clips folder...</p>',
+  );
+  return $('#analysis-inventory');
+}
 const clipOf = (h) => clips.find((c) => c.id === h?.clip_id);
 const highlightOf = (id) => highlights.find((h) => h.id === id);
 const fileName = (p) => (p || '').split(/[\\/]/).pop();
@@ -239,10 +259,28 @@ function mountHighlightDeletion() {
 mountHighlightDeletion();
 async function reload() {
   try {
-    [clips, highlights, projects, analyses] = await Promise.all(
-      ['/api/clips', '/api/highlights', '/api/projects', '/api/analysis/clips'].map((u) => api(u)),
+    [clips, highlights, projects, analyses, mediaInventory] = await Promise.all(
+      [
+        '/api/clips',
+        '/api/highlights',
+        '/api/projects',
+        '/api/analysis/clips',
+        '/api/media/inventory',
+      ].map((u) => api(u)),
     );
     $('#stat-clips').textContent = clips.length;
+    $('#stat-clips').nextElementSibling.textContent = 'In database';
+    ensureFolderClipStat().textContent = mediaInventory.files.length;
+    $('#folder-clips-label').textContent = mediaInventory.exists
+      ? `In ${mediaInventory.mediaDir}/`
+      : `${mediaInventory.mediaDir}/ missing`;
+    const readyFiles = mediaInventory.files.length;
+    ensureAnalysisInventory().textContent = mediaInventory.exists
+      ? readyFiles
+        ? `${readyFiles} video file${readyFiles === 1 ? '' : 's'} found in ${mediaInventory.mediaDir}/ and ready to analyze.`
+        : `No supported video files found in ${mediaInventory.mediaDir}/. Add .mp4, .mkv, .mov, or .webm files, then refresh.`
+      : `The configured media folder ${mediaInventory.mediaDir}/ does not exist. Create it or update Project settings.`;
+    $('#start-analysis').disabled = !readyFiles;
     $('#stat-highlights').textContent = highlights.length;
     $('#stat-approved').textContent = highlights.filter((h) => h.status === 'approved').length;
     $('#stat-movies').textContent = projects.length;
@@ -1021,7 +1059,7 @@ async function pollRuns() {
         ? `${Math.min(100, (100 * (latest?.processed_count || 0)) / total)}%`
         : '5%';
     }
-    $('#start-analysis').disabled = running;
+    $('#start-analysis').disabled = running || !mediaInventory?.files.length;
     $('#stop-analysis').disabled = !(uiJob || latest?.status === 'running');
     if (lastRun && latest?.id === lastRun && latest.status !== 'running') {
       await reload();
@@ -1041,10 +1079,18 @@ $('#run-select').onchange = () => {
   pollRuns();
 };
 $('#start-analysis').onclick = async () => {
+  const provider = $('#analysis-provider').value;
+  if (
+    provider === 'none' &&
+    !confirm(
+      'No AI is selected. Local analysis stays private, but produces less reliable and less context-aware candidates. Start without AI?',
+    )
+  )
+    return;
   busy($('#start-analysis'), true, 'Analyzing...');
   try {
     const r = await send('/api/analysis/start', 'POST', {
-      provider: $('#analysis-provider').value,
+      provider,
       force: $('#analysis-force').checked,
     });
     uiJob = r.jobId;

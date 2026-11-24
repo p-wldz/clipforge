@@ -1,6 +1,6 @@
 import http from 'node:http';
 import path from 'node:path';
-import { mkdir, readFile, stat, writeFile, rm } from 'node:fs/promises';
+import { mkdir, readFile, readdir, stat, writeFile, rm } from 'node:fs/promises';
 import { createReadStream } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { Store } from './core/db.js';
@@ -37,6 +37,7 @@ const contentTypes: Record<string, string> = {
   '.mp4': 'video/mp4',
   '.webm': 'video/webm',
 };
+const videoExtensions = new Set(['.mp4', '.mkv', '.mov', '.webm']);
 async function jsonBody(req: http.IncomingMessage) {
   let buf = '';
   for await (const part of req) {
@@ -103,6 +104,12 @@ type AnalysisJob = {
 };
 export type DashboardServer = http.Server & { abortAnalysis(): Promise<void> };
 export function startServer(root: string, port: number, host = '127.0.0.1'): DashboardServer {
+  const recoveryStore = new Store(root);
+  try {
+    recoveryStore.recoverAbandonedDashboardRuns();
+  } finally {
+    recoveryStore.close();
+  }
   const renderJobs = new Map<string, RenderJob>();
   let proposalJob: {
     status: 'running' | 'completed' | 'failed';
@@ -116,6 +123,27 @@ export function startServer(root: string, port: number, host = '127.0.0.1'): Das
     try {
       const url = new URL(req.url ?? '/', `http://${host}:${port}`);
       const parts = url.pathname.split('/').filter(Boolean);
+      if (url.pathname === '/api/media/inventory' && req.method === 'GET') {
+        const config = await loadConfig(root);
+        const mediaPath = path.resolve(root, config.mediaDir);
+        try {
+          const entries = await readdir(mediaPath, { withFileTypes: true });
+          return send(res, 200, {
+            mediaDir: config.mediaDir,
+            exists: true,
+            files: entries
+              .filter(
+                (entry) =>
+                  entry.isFile() && videoExtensions.has(path.extname(entry.name).toLowerCase()),
+              )
+              .map((entry) => entry.name)
+              .sort((a, b) => a.localeCompare(b)),
+          });
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+          return send(res, 200, { mediaDir: config.mediaDir, exists: false, files: [] });
+        }
+      }
       if (url.pathname === '/api/ai/providers' && req.method === 'GET')
         return send(
           res,
@@ -229,6 +257,7 @@ export function startServer(root: string, port: number, host = '127.0.0.1'): Das
                 ? undefined
                 : (provider as 'codex' | 'claude' | 'deepseek' | 'openai'),
             force: input.force,
+            runOwner: 'dashboard',
             signal: controller.signal,
           },
           () => {},
@@ -313,6 +342,7 @@ export function startServer(root: string, port: number, host = '127.0.0.1'): Das
                 ? undefined
                 : (provider as 'codex' | 'claude' | 'deepseek' | 'openai'),
             force: true,
+            runOwner: 'dashboard',
             signal: controller.signal,
           },
           () => {},

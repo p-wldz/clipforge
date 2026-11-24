@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
@@ -106,6 +106,37 @@ test('dashboard analysis start checks inputs and reports failures asynchronously
     await new Promise((r) => server.close(r));
     await rm(dir, { recursive: true, force: true });
   }
+});
+
+test('dashboard reports media files ready for a first analysis', async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'clipforge-media-inventory-'));
+  await initWorkspace(dir);
+  await writeFile(path.join(dir, 'clips', 'match.MP4'), 'fixture');
+  await writeFile(path.join(dir, 'clips', 'notes.txt'), 'not a video');
+  const server = startServer(dir, 0);
+  await new Promise((resolve) =>
+    server.listening ? resolve() : server.once('listening', resolve),
+  );
+  try {
+    const base = `http://127.0.0.1:${server.address().port}`;
+    const response = await fetch(base + '/api/media/inventory');
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), {
+      mediaDir: 'clips',
+      exists: true,
+      files: ['match.MP4'],
+    });
+  } finally {
+    await new Promise((r) => server.close(r));
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('dashboard keeps media discovery separate from the AI model inventory and confirms local analysis', async () => {
+  const app = await readFile(new URL('../src/dashboard/app.js', import.meta.url), 'utf8');
+  assert.match(app, /mediaInventory = null/);
+  assert.match(app, /!mediaInventory\?\.files\.length/);
+  assert.match(app, /No AI is selected[\s\S]*Start without AI\?/);
 });
 
 test('dashboard can reset and reanalyze one clip while retaining its review observation', async () => {
