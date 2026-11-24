@@ -471,7 +471,7 @@ async function showHighlight(id) {
   };
   $('#review').insertAdjacentHTML(
     'beforeend',
-    `<details class="clip-meta"><summary>Your feedback</summary><div class="range-fields"><label>Rating<select id="feedback-rating"><option value="">No rating</option>${[1, 2, 3, 4, 5].map((n) => `<option value="${n}">${n} star${n === 1 ? '' : 's'}</option>`).join('')}</select></label><label>Category<select id="feedback-category"><option value="">Choose one</option>${['too_short', 'too_long', 'starts_too_late', 'ends_too_early', 'missed_important_action', 'missing_context', 'missing_reaction', 'wrong_interpretation', 'not_interesting', 'repetitive', 'bad_audio', 'funny_moment', 'great_action', 'excellent_storytelling'].map((x) => `<option value="${x}">${safe(x.replaceAll('_', ' '))}</option>`).join('')}</select></label></div><label>Notes<textarea id="feedback-notes" rows="2" placeholder="Optional feedback for future review"></textarea></label><label class="checkbox-row"><input id="feedback-favorite" type="checkbox"> Favorite</label><button id="feedback-save" class="button-secondary">Save feedback</button><div id="feedback-history" class="muted little"></div></details><details class="clip-meta"><summary>Mark a missed moment</summary><p class="muted little">Uses the current cut range; adjust start/end above first.</p><label>Description<textarea id="missed-description" rows="2" placeholder="What did Clipforge miss?"></textarea></label><button id="missed-save" class="button-secondary">Save missed moment</button></details>`,
+    `<details class="clip-meta"><summary>Your feedback</summary><div class="range-fields"><label>Rating<select id="feedback-rating"><option value="">No rating</option>${[1, 2, 3, 4, 5].map((n) => `<option value="${n}">${n} star${n === 1 ? '' : 's'}</option>`).join('')}</select></label><label>Category<select id="feedback-category"><option value="">Choose one</option>${['too_short', 'too_long', 'starts_too_late', 'ends_too_early', 'missed_important_action', 'missing_context', 'missing_reaction', 'wrong_interpretation', 'not_interesting', 'repetitive', 'bad_audio', 'funny_moment', 'great_action', 'excellent_storytelling'].map((x) => `<option value="${x}">${safe(x.replaceAll('_', ' '))}</option>`).join('')}</select></label></div><label>Notes<textarea id="feedback-notes" rows="2" placeholder="Optional feedback for future review"></textarea></label><label class="checkbox-row"><input id="feedback-favorite" type="checkbox"> Favorite</label><button id="feedback-save" class="button-secondary">Save feedback</button><div id="feedback-history" class="muted little"></div></details><details class="clip-meta"><summary>Quality benchmark</summary><p class="muted little">Add the current cut as a manually labeled expected moment. This does not approve it.</p><label>Label<textarea id="benchmark-label" rows="2" placeholder="Why is this a moment worth finding?"></textarea></label><button id="benchmark-save" class="button-secondary">Add to benchmark</button></details><details class="clip-meta"><summary>Mark a missed moment</summary><p class="muted little">Uses the current cut range; adjust start/end above first.</p><label>Description<textarea id="missed-description" rows="2" placeholder="What did Clipforge miss?"></textarea></label><button id="missed-save" class="button-secondary">Save missed moment</button></details>`,
   );
   const renderFeedback = async () => {
     const rows = await api(`/api/highlights/${encodeURIComponent(h.id)}/feedback`);
@@ -513,6 +513,21 @@ async function showHighlight(id) {
         notify('Missed moment saved for your next targeted reanalysis');
       });
     } catch {}
+  };
+  $('#benchmark-save').onclick = async () => {
+    try {
+      await clickTask($('#benchmark-save'), 'Adding...', async () => {
+        await send('/api/evaluation/moments', 'POST', {
+          clipId: h.clip_id,
+          start: Number($('#review-start').value),
+          end: Number($('#review-end').value),
+          label: $('#benchmark-label').value,
+        });
+        notify('Expected moment added to the local benchmark');
+      });
+    } catch (error) {
+      notify(error.message.includes('No evaluation fixture') ? 'Create the benchmark template on Home first.' : error.message);
+    }
   };
   renderFeedback().catch((e) => notify(e.message));
   const v = $('#review-player');

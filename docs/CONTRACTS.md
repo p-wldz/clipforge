@@ -27,7 +27,7 @@ For AI-derived highlights, an included Deep Action's saved interval must include
 
 ## HTTP API
 - `GET /api/clips`
-- `GET /api/evaluation` returns the local benchmark report when `.clipforge/evaluation.json` is configured; `POST /api/evaluation/init` explicitly creates its editable template and never overwrites one.
+- `GET /api/evaluation` returns the local benchmark report when `.clipforge/evaluation.json` is configured; `POST /api/evaluation/init` explicitly creates its editable template and never overwrites one; `POST /api/evaluation/moments` appends one manually labeled, range-validated expected moment for an indexed clip.
 - `GET /api/highlights`
 - `PATCH /api/highlights/:id` keys start/end/title/description/status
 - `GET /api/projects`

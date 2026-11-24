@@ -154,6 +154,39 @@ export function startServer(root: string, port: number, host = '127.0.0.1'): Das
         await writeFile(file, JSON.stringify(evaluationTemplate, null, 2) + '\n', 'utf8');
         return send(res, 201, { fixturePath: file });
       }
+      if (url.pathname === '/api/evaluation/moments' && req.method === 'POST') {
+        const input = await jsonBody(req);
+        const start = input.start;
+        const end = input.end;
+        if (
+          typeof input.clipId !== 'string' ||
+          typeof start !== 'number' ||
+          typeof end !== 'number' ||
+          !Number.isFinite(start) ||
+          !Number.isFinite(end) ||
+          start < 0 ||
+          end <= start ||
+          (input.label !== undefined && (typeof input.label !== 'string' || input.label.length > 500))
+        )
+          throw new Error('Invalid evaluation moment');
+        const clip = db.clip(input.clipId);
+        if (!clip || end > clip.duration + 0.05) throw new Error('Invalid evaluation moment');
+        const fixture = await loadEvaluationFixture(root);
+        const moment = {
+          id: `expected-${newId()}`,
+          clipId: clip.id,
+          start,
+          end,
+          ...(typeof input.label === 'string' && input.label.trim()
+            ? { label: input.label.trim() }
+            : {}),
+        };
+        fixture.moments = fixture.moments
+          .filter((entry) => entry.id !== 'example-moment')
+          .concat(moment);
+        await writeFile(evaluationFixturePath(root), JSON.stringify(fixture, null, 2) + '\n', 'utf8');
+        return send(res, 201, moment);
+      }
       if (url.pathname === '/api/media/inventory' && req.method === 'GET') {
         const config = await loadConfig(root);
         const mediaPath = path.resolve(root, config.mediaDir);
