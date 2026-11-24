@@ -749,6 +749,37 @@ export class Store {
           .all(clipId)
       : this.db.prepare('SELECT * FROM missed_moments ORDER BY created_at DESC').all();
   }
+  /** Bounded user-owned calibration for editing; never use it as objective media evidence. */
+  reviewContext(clipId: string) {
+    const feedback = this.reviewObservations(clipId).map((row: any) => ({
+      kind: 'reviewed_highlight',
+      start: row.start,
+      end: row.end,
+      rating: row.rating,
+      category: row.category,
+      notes: String(row.notes ?? '').slice(0, 1000),
+      favorite: Boolean(row.favorite),
+      createdAt: row.created_at,
+    }));
+    const missed = this.missedMoments(clipId).map((row: any) => ({
+      kind: 'missed_moment',
+      start: row.start,
+      end: row.end,
+      rating: row.rating,
+      category: row.category,
+      description: String(row.description ?? '').slice(0, 1000),
+      createdAt: row.created_at,
+    }));
+    return [...feedback, ...missed]
+      .sort(
+        (a, b) =>
+          String(b.createdAt).localeCompare(String(a.createdAt)) ||
+          a.kind.localeCompare(b.kind) ||
+          a.start - b.start ||
+          a.end - b.end,
+      )
+      .slice(0, 50);
+  }
   setTranscript(clipId: string, transcript: string) {
     this.db.prepare('UPDATE clips SET transcript=? WHERE id=?').run(transcript, clipId);
   }

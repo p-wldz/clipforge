@@ -304,7 +304,7 @@ export async function analyze(
           };
           // Feedback calibrates creative selection only. It is deliberately excluded from
           // conversation/deep-action input so it cannot turn a user preference into media fact.
-          const reviewObservations = db.reviewObservations(id);
+          const reviewObservations = db.reviewContext(id);
           const max = config.analysis.maxImagesPerClip ?? 8;
           const selection = selectFrames(
             pics,

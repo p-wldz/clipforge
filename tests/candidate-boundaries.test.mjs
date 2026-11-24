@@ -57,6 +57,14 @@ test('resetting a clip removes generated highlights but retains review observati
         notes: 'Show the setup',
         favorite: true,
       });
+      db.createMissedMoment({
+        id: 'missed',
+        clipId: 'clip',
+        start: 12,
+        end: 16,
+        description: 'The funny reaction was missed',
+        category: 'missing_reaction',
+      });
       assert.equal(db.resetClipHighlights('clip'), 1);
       assert.equal(db.highlight('highlight'), undefined);
       assert.deepEqual(
@@ -68,6 +76,18 @@ test('resetting a clip removes generated highlights but retains review observati
           favorite: row.favorite,
         })),
         [{ start: 3, end: 8, category: 'starts_too_late', notes: 'Show the setup', favorite: 1 }],
+      );
+      assert.deepEqual(
+        db.reviewContext('clip').map((row) => ({
+          kind: row.kind,
+          start: row.start,
+          end: row.end,
+          category: row.category,
+        })),
+        [
+          { kind: 'missed_moment', start: 12, end: 16, category: 'missing_reaction' },
+          { kind: 'reviewed_highlight', start: 3, end: 8, category: 'starts_too_late' },
+        ],
       );
     } finally {
       db.close();
