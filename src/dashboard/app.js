@@ -1019,6 +1019,8 @@ async function pollRuns() {
     $('#run-status').textContent = latest
       ? `${latest.status.toUpperCase()} · ${latest.current_stage || 'pending'} · ${latest.processed_count}/${latest.source_count} files${latest.current_file ? ' · ' + fileName(latest.current_file) : ''}${latest.error ? ' · ' + latest.error : ''}`
       : 'No analysis yet';
+    if (latest)
+      $('#run-status').textContent += ` · Started from ${latest.owner === 'dashboard' ? 'dashboard' : 'CLI'}`;
     $('#run-select').innerHTML = analysisRuns
       .map(
         (r) => `<option value="${safe(r.id)}">${safe(r.started_at)} · ${safe(r.status)}</option>`,
@@ -1060,7 +1062,7 @@ async function pollRuns() {
         : '5%';
     }
     $('#start-analysis').disabled = running || !mediaInventory?.files.length;
-    $('#stop-analysis').disabled = !(uiJob || latest?.status === 'running');
+    $('#stop-analysis').disabled = !(uiJob || (latest?.status === 'running' && latest.owner === 'dashboard'));
     if (lastRun && latest?.id === lastRun && latest.status !== 'running') {
       await reload();
       lastRun = '';
@@ -1111,6 +1113,11 @@ $('#stop-analysis').onclick = async () => {
       if (active.status === 'running') uiJob = active.jobId;
     }
     if (!uiJob && latest?.status === 'running') {
+      if (latest.owner !== 'dashboard') {
+        $('#analysis-job-status').textContent =
+          'A CLI analysis is running. Manage it from the terminal that started it.';
+        return;
+      }
       if (
         !confirm(
           'The dashboard that started this run is no longer available. Clear its stuck record? This cannot stop a separately run CLI analysis.',
