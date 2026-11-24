@@ -15,6 +15,7 @@
 - `highlight_sets(context_key, cache_key)` and `highlight_set_items(...)` retain editing candidates per creative context. They never delete approved or rejected highlight rows.
 - `transcript_segments` has a workspace-local FTS5 index refreshed atomically with each transcript revision; normal search never returns superseded segment rows.
 - `highlight_feedback` and `missed_moments` are user-owned annotations, separate from generated highlights and retained when AI candidates are regenerated.
+- `analysis_runs.owner` distinguishes `cli` and `dashboard` runs. A dashboard can clear only an abandoned dashboard record; starting a dashboard never mutates a running record, because another local dashboard process may still own it.
 
 Highlight `status`: `pending_review | approved | rejected`. `origin`: `heuristic | codex | claude`. Time units are seconds, start inclusive, end exclusive. Scores 0–100; heuristic score 50 represents an unverified candidate.
 
@@ -36,7 +37,7 @@ For AI-derived highlights, an included Deep Action's saved interval must include
 - `GET /thumbnail/:clipId`
 - `POST /api/analysis/jobs/:jobId/cancel` cooperatively cancels a dashboard analysis. In-flight agent subprocesses are terminated; local stages stop before the next clip.
 - `POST /api/analysis/jobs/active/cancel` cancels the dashboard's active analysis without requiring a browser-held job ID. It never claims to stop a separately run CLI process.
-- `POST /api/analysis/runs/:runId/cancel` explicitly clears an abandoned `running` record after its dashboard process has exited. It never terminates a separately run CLI process.
+- `POST /api/analysis/runs/:runId/cancel` explicitly clears an abandoned dashboard `running` record after its process has exited. It rejects CLI-owned records and never terminates a separately run CLI process.
 
 ## Highlight deletion
 

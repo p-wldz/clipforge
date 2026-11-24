@@ -58,7 +58,7 @@ export class Store {
       CREATE TABLE IF NOT EXISTS review_observations(id INTEGER PRIMARY KEY AUTOINCREMENT,clip_id TEXT NOT NULL REFERENCES clips(id),start REAL NOT NULL,end REAL NOT NULL,rating INTEGER CHECK(rating BETWEEN 1 AND 5),category TEXT,notes TEXT NOT NULL DEFAULT '',favorite INTEGER NOT NULL DEFAULT 0,source_highlight_id TEXT,created_at TEXT NOT NULL);
       CREATE INDEX IF NOT EXISTS idx_review_observations_clip ON review_observations(clip_id,created_at DESC);
       CREATE TABLE IF NOT EXISTS missed_moments(id TEXT PRIMARY KEY,clip_id TEXT NOT NULL REFERENCES clips(id),start REAL NOT NULL,end REAL NOT NULL,description TEXT NOT NULL DEFAULT '',category TEXT,rating INTEGER CHECK(rating BETWEEN 1 AND 5),created_at TEXT NOT NULL);
-      CREATE TABLE IF NOT EXISTS analysis_runs(id TEXT PRIMARY KEY,started_at TEXT NOT NULL,finished_at TEXT,status TEXT NOT NULL,provider TEXT,source_count INTEGER NOT NULL,processed_count INTEGER NOT NULL DEFAULT 0,current_file TEXT,current_stage TEXT,error TEXT);
+      CREATE TABLE IF NOT EXISTS analysis_runs(id TEXT PRIMARY KEY,started_at TEXT NOT NULL,finished_at TEXT,status TEXT NOT NULL,provider TEXT,owner TEXT NOT NULL DEFAULT 'cli',source_count INTEGER NOT NULL,processed_count INTEGER NOT NULL DEFAULT 0,current_file TEXT,current_stage TEXT,error TEXT);
       CREATE TABLE IF NOT EXISTS analysis_events(id INTEGER PRIMARY KEY AUTOINCREMENT,run_id TEXT NOT NULL,at TEXT NOT NULL,level TEXT NOT NULL,stage TEXT NOT NULL,clip_id TEXT,message TEXT NOT NULL);
       CREATE INDEX IF NOT EXISTS idx_analysis_events_run ON analysis_events(run_id,id);
       CREATE TABLE IF NOT EXISTS clip_analyses(clip_id TEXT PRIMARY KEY,run_id TEXT NOT NULL,provider TEXT NOT NULL,status TEXT NOT NULL,title TEXT,summary TEXT,story_json TEXT,tags_json TEXT,trace_path TEXT,error TEXT,updated_at TEXT NOT NULL);
@@ -87,6 +87,8 @@ export class Store {
     const runColumns = this.db.prepare('PRAGMA table_info(analysis_runs)').all() as Array<{
       name: string;
     }>;
+    if (!runColumns.some((c) => c.name === 'owner'))
+      this.db.exec("ALTER TABLE analysis_runs ADD COLUMN owner TEXT NOT NULL DEFAULT 'cli'");
     if (!runColumns.some((c) => c.name === 'warning_count'))
       this.db.exec('ALTER TABLE analysis_runs ADD COLUMN warning_count INTEGER NOT NULL DEFAULT 0');
     if (!runColumns.some((c) => c.name === 'failed_files'))
@@ -342,12 +344,12 @@ export class Store {
       complete: rows.every((x) => x.api_equivalent_usd !== null),
     };
   }
-  startRun(id: string, provider: string, total: number) {
+  startRun(id: string, provider: string, total: number, owner: 'cli' | 'dashboard' = 'cli') {
     this.db
       .prepare(
-        'INSERT INTO analysis_runs(id,started_at,status,provider,source_count,current_stage) VALUES(?,?,?,?,?,?)',
+        'INSERT INTO analysis_runs(id,started_at,status,provider,owner,source_count,current_stage) VALUES(?,?,?,?,?,?,?)',
       )
-      .run(id, new Date().toISOString(), 'running', provider, total, 'starting');
+      .run(id, new Date().toISOString(), 'running', provider, owner, total, 'starting');
   }
   progressRun(id: string, stage: string, file: string | null, processed?: number) {
     if (processed === undefined)

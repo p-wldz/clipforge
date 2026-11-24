@@ -279,7 +279,7 @@ test('dashboard can clear an abandoned analysis record without an in-memory job'
   const dir = await mkdtemp(path.join(os.tmpdir(), 'clipforge-dashboard-stale-'));
   await initWorkspace(dir);
   const db = new Store(dir);
-  db.startRun('abandoned-run', 'none', 1);
+  db.startRun('abandoned-run', 'none', 1, 'dashboard');
   db.close();
   const server = startServer(dir, 0);
   await new Promise((resolve) =>
@@ -287,6 +287,12 @@ test('dashboard can clear an abandoned analysis record without an in-memory job'
   );
   try {
     const base = `http://127.0.0.1:${server.address().port}`;
+    const beforeClear = new Store(dir);
+    try {
+      assert.equal(beforeClear.runs()[0].status, 'running');
+    } finally {
+      beforeClear.close();
+    }
     const response = await fetch(base + '/api/analysis/runs/abandoned-run/cancel', {
       method: 'POST',
     });
@@ -295,6 +301,32 @@ test('dashboard can clear an abandoned analysis record without an in-memory job'
     const check = new Store(dir);
     try {
       assert.equal(check.runs()[0].status, 'cancelled');
+    } finally {
+      check.close();
+    }
+  } finally {
+    await new Promise((r) => server.close(r));
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('dashboard cannot clear a CLI analysis record', async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'clipforge-dashboard-cli-run-'));
+  await initWorkspace(dir);
+  const db = new Store(dir);
+  db.startRun('cli-run', 'none', 1);
+  db.close();
+  const server = startServer(dir, 0);
+  await new Promise((resolve) =>
+    server.listening ? resolve() : server.once('listening', resolve),
+  );
+  try {
+    const base = `http://127.0.0.1:${server.address().port}`;
+    const response = await fetch(base + '/api/analysis/runs/cli-run/cancel', { method: 'POST' });
+    assert.equal(response.status, 409);
+    const check = new Store(dir);
+    try {
+      assert.equal(check.runs()[0].status, 'running');
     } finally {
       check.close();
     }

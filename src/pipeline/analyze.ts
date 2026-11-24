@@ -28,6 +28,7 @@ export async function analyze(
     withAgent: boolean;
     force: boolean;
     provider?: 'codex' | 'claude' | 'cursor' | 'deepseek' | 'openai' | 'anthropic';
+    runOwner?: 'cli' | 'dashboard';
     signal?: AbortSignal;
   },
   onProgress: (line: string) => void = console.log,
@@ -58,7 +59,7 @@ export async function analyze(
           .filter((x) => extensions.has(path.extname(x).toLowerCase()))
           .map((x) => path.join(input, x))
       : [input];
-    db.startRun(runId, provider, files.length);
+    db.startRun(runId, provider, files.length, options.runOwner);
     const context = await readFile(path.join(root, '.clipforge', 'context.md'), 'utf8').catch(
       () => config.project.focus,
     );

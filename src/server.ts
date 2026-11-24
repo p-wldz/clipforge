@@ -104,12 +104,6 @@ type AnalysisJob = {
 };
 export type DashboardServer = http.Server & { abortAnalysis(): Promise<void> };
 export function startServer(root: string, port: number, host = '127.0.0.1'): DashboardServer {
-  const recoveryStore = new Store(root);
-  try {
-    recoveryStore.recoverAbandonedDashboardRuns();
-  } finally {
-    recoveryStore.close();
-  }
   const renderJobs = new Map<string, RenderJob>();
   let proposalJob: {
     status: 'running' | 'completed' | 'failed';
@@ -430,11 +424,15 @@ export function startServer(root: string, port: number, host = '127.0.0.1'): Das
         req.method === 'POST'
       ) {
         const run = db.runs().find((entry: any) => entry.id === parts[3]) as
-          | { id: string; status: string }
+          | { id: string; status: string; owner?: 'cli' | 'dashboard' }
           | undefined;
         if (!run) return send(res, 404, { error: 'Analysis run not found' });
         if (run.status !== 'running')
           return send(res, 409, { error: 'Analysis run is not running' });
+        if (run.owner !== 'dashboard')
+          return send(res, 409, {
+            error: 'Only an abandoned dashboard analysis record can be cleared here.',
+          });
         db.finishRun(
           run.id,
           'cancelled',
